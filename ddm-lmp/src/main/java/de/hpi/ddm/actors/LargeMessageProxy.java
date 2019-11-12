@@ -1,11 +1,16 @@
 package de.hpi.ddm.actors;
 
-import java.io.Serializable;
+import java.io.*;
+import java.util.Arrays;
 
+import akka.NotUsed;
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import akka.actor.Props;
+import akka.stream.javadsl.Source;
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Output;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -72,11 +77,36 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// 2. Serialize the object and send its bytes via Akka streaming.
 		// 3. Send the object via Akka's http client-server component.
 		// 4. Other ideas ...
-		receiverProxy.tell(new BytesMessage<>(message.getMessage(), this.sender(), message.getReceiver()), this.self());
+
+        // convert message into byte array using kryo
+        byte[] byteMessage = convertByte(message.getMessage());
+
+        // TODO: convert byteMessage into chunks (hardcode chunk sizes)
+
+        // create source
+        final Source<byte[], NotUsed> source =
+                Source.from(Arrays.asList(byteMessage));
+
+        receiverProxy.tell(new BytesMessage<>(source, this.sender(), message.getReceiver()), this.self());
 	}
+
+
+	private byte[] convertByte(Object message) {
+        try {
+            Kryo kryo = new Kryo();
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+            Output output = new Output(stream);
+            kryo.writeClassAndObject(output, message);
+            output.close();
+            stream.close();
+            return stream.toByteArray();
+        }catch(Exception e){
+            return null;
+        }
+    }
 
 	private void handle(BytesMessage<?> message) {
 		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
-		message.getReceiver().tell(message.getBytes(), message.getSender());
+        message.getReceiver().tell(message.getBytes(), message.getSender());
 	}
 }
