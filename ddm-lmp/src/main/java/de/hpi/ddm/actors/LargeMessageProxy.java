@@ -2,7 +2,6 @@ package de.hpi.ddm.actors;
 
 import java.io.*;
 import java.util.ArrayList;
-import java.util.*;
 
 import akka.actor.*;
 import com.esotericsoftware.kryo.Kryo;
@@ -11,7 +10,6 @@ import com.esotericsoftware.kryo.io.Output;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import scala.util.control.Exception;
 
 public class LargeMessageProxy extends AbstractLoggingActor {
 
@@ -25,7 +23,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		return Props.create(LargeMessageProxy.class);
 	}
 
-	private ArrayList<Byte> messageList = new ArrayList<Byte>() ;
+	private ArrayList<Byte> messageList = new ArrayList<>();
 
 	////////////////////
 	// Actor Messages //
@@ -42,6 +40,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	public static class BytesMessage implements Serializable {
 		private static final long serialVersionUID = 4057807743872319842L;
 		private byte[] bytes;
+		private int length;
 		private int id;
 		private ActorRef sender;
 		private ActorRef receiver;
@@ -82,6 +81,8 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// serialize message into byte array using kryo
 		byte[] byteMessage = convertToBytes(message.getMessage());
 
+		System.out.println(byteMessage.length);
+
 		// convert serialized byteMessage into chunks with hardcoded size
 		// TODO: check if dynamically assigning a chunk size is better
 		byte[][] chunks = divideArray(byteMessage, 4096);
@@ -92,17 +93,12 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			msg.bytes = chunks[i];
 			// TODO: check whether there is a better way to set the id for reassembling
 			msg.id = i;
-			System.out.println(msg.id + " A " + msg.bytes);
+			//System.out.println(msg.id + " A " + msg.bytes);
 			msg.receiver = receiver;
 			msg.sender = this.sender();
+			msg.length = chunks.length*4096;
 			receiverProxy.tell(msg, this.self());
 		}
-		BytesMessage closingMessage = new BytesMessage();
-		closingMessage.bytes = convertToBytes("close");
-		closingMessage.id =  i + 1;
-		closingMessage.receiver = receiver;
-		closingMessage.sender = this.sender();
-		receiverProxy.tell(closingMessage, this.self());
 	}
 
 	// kryo documentation: https://github.com/EsotericSoftware/kryo
@@ -138,32 +134,40 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		return result;
 	}
 
+
 	private void handle(BytesMessage message) {
 		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
 
 		// TODO: reassemble the chunks
 		System.out.println(message.id + " B " + message.bytes);
 
-		if (message.bytes == convertToBytes("close")) {
-			byte[] completeArray = new byte[messageList.size()];
-			for (int i = 0; i <= messageList.size(); i++)
-				completeArray[i] = messageList.get(i);
-			// completeArray = messageList.toArray(completeArray);
+		for (int i=0; i< message.bytes.length; i++){
+			messageList.add(message.bytes[i]);
+		}
+
+		System.out.println(messageList.size());
+
+		if (messageList.size() == message.length) {
+			System.out.println(messageList.size());
+			byte[] result = messageList.stream()
+					.collect(
+							() -> new ByteArrayOutputStream(),
+							(b, e) -> {
+								b.write(e);
+							},
+							(a, b) -> {}).toByteArray();
+			System.out.println(result);
+			System.out.println(result.length);
 
 			Object object = null;
 			Kryo kryo = new Kryo();
-			ByteArrayInputStream stream = new ByteArrayInputStream(completeArray);
+			ByteArrayInputStream stream = new ByteArrayInputStream(result);
 			Input input = new Input(stream);
 			object = kryo.readClassAndObject(input);
 			input.close();
 
 			message.getReceiver().tell(object, message.getSender());
-		} else {
-			for (byte b : message.bytes) {
-				messageList.add(b);
-			}
+
 		}
-
-
 	}
 }
