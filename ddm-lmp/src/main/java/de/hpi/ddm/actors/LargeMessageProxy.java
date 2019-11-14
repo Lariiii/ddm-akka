@@ -40,10 +40,10 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 
 	@Data @NoArgsConstructor @AllArgsConstructor
-	public static class BytesMessage implements Serializable {
+	public static class BytesMessage<T> implements Serializable {
 		private static final long serialVersionUID = 4057807743872319842L;
 		// TODO: change byte[] into T again
-		private byte[] bytes;
+		private T bytes;
 		private int length;
 		private ActorRef sender;
 		private ActorRef receiver;
@@ -83,7 +83,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// convert serialized byteMessage into chunks with hardcoded size
 		int i = 0;
 		for(; i < chunks.length; i++){
-			BytesMessage msg = new BytesMessage();
+			BytesMessage<byte[]> msg = new BytesMessage();
 			msg.bytes = chunks[i];
 			msg.receiver = receiver;
 			msg.sender = this.sender();
@@ -129,9 +129,10 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 
 	// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
-	private void handle(BytesMessage message) {
-		for (int i=0; i< message.bytes.length; i++){
-			messageList.add(message.bytes[i]);
+	private void handle(BytesMessage<?> message) {
+		for (int i = 0; i < ((byte[]) message.bytes).length; i++){
+			byte[] byteMessage = ((byte[]) message.bytes);
+			messageList.add(byteMessage[i]);
 		}
 
 		if (messageList.size() == message.length) {
