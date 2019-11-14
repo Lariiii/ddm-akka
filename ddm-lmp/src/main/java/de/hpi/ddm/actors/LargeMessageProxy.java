@@ -2,6 +2,7 @@ package de.hpi.ddm.actors;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 import akka.actor.*;
 import com.esotericsoftware.kryo.Kryo;
@@ -24,6 +25,9 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 
 	private ArrayList<Byte> messageList = new ArrayList<>();
+
+	private byte[] original;
+	private byte[] end;
 
 	////////////////////
 	// Actor Messages //
@@ -81,11 +85,15 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// serialize message into byte array using kryo
 		byte[] byteMessage = convertToBytes(message.getMessage());
 
+		original = byteMessage;
+
 		System.out.println(byteMessage.length);
+
+		int chunksize = 4096;
 
 		// convert serialized byteMessage into chunks with hardcoded size
 		// TODO: check if dynamically assigning a chunk size is better
-		byte[][] chunks = divideArray(byteMessage, 4096);
+		byte[][] chunks = divideArray(byteMessage, chunksize);
 
 		int i = 0;
 		for(; i < chunks.length; i++){
@@ -96,7 +104,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			//System.out.println(msg.id + " A " + msg.bytes);
 			msg.receiver = receiver;
 			msg.sender = this.sender();
-			msg.length = chunks.length*4096;
+			msg.length = byteMessage.length;
 			receiverProxy.tell(msg, this.self());
 		}
 	}
@@ -117,23 +125,23 @@ public class LargeMessageProxy extends AbstractLoggingActor {
     }
 
     // divide the byte message array into chunks
-	private static byte[][] divideArray(byte[] byteMessage, int chunksize) {
-		// TODO: check if byteMessage is completely divided into chunks
-		byte[][] result = new byte[((int)Math.ceil(byteMessage.length)/(int)chunksize)+1][chunksize];
-		int start = 0;
-
-		for(int i = 0; i < result.length; i++) {
-			if(start + chunksize > byteMessage.length) {
-				System.arraycopy(byteMessage, start, result[i], 0, byteMessage.length - start);
-			} else {
-				System.arraycopy(byteMessage, start, result[i], 0 , chunksize);
+	private byte[][] divideArray(byte[] byteMessage, int chunkSize){
+		int lastChunk = byteMessage.length % chunkSize;
+		int chunks = byteMessage.length / chunkSize + (lastChunk > 0 ? 1 : 0);
+		byte[][] arrays = new byte[chunks][];
+		if (lastChunk > 0) {
+			for (int i = 0; i < chunks - 1; i++) {
+				arrays[i] = Arrays.copyOfRange(byteMessage, i * chunkSize, i * chunkSize + chunkSize);
 			}
-			start += chunksize;
+			arrays[chunks - 1] = Arrays.copyOfRange(byteMessage, (chunks - 1) * chunkSize, (chunks - 1) * chunkSize + lastChunk);
+		} else {
+			for (int i = 0; i < chunks; i++) {
+				arrays[i] = Arrays.copyOfRange(byteMessage, i * chunkSize, i * chunkSize + chunkSize);
+			}
 		}
 
-		return result;
+		return arrays;
 	}
-
 
 	private void handle(BytesMessage message) {
 		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
@@ -166,8 +174,13 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			object = kryo.readClassAndObject(input);
 			input.close();
 
+			end = result;
+			System.out.println(original == end);
+
 			message.getReceiver().tell(object, message.getSender());
 
+		} else {
+			System.out.println("done");
 		}
 	}
 }
