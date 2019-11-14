@@ -26,7 +26,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 	private ArrayList<Byte> messageList = new ArrayList<>();
 
-	private byte[] original;
+	// to test whether we get the same byte array after reassembling
 	private byte[] end;
 
 	////////////////////
@@ -43,11 +43,12 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	@Data @NoArgsConstructor @AllArgsConstructor
 	public static class BytesMessage implements Serializable {
 		private static final long serialVersionUID = 4057807743872319842L;
+		// TODO: change byte[] into T again
 		private byte[] bytes;
 		private int length;
-		private int id;
 		private ActorRef sender;
 		private ActorRef receiver;
+		private byte[] original;
 	}
 	
 	/////////////////
@@ -85,26 +86,20 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		// serialize message into byte array using kryo
 		byte[] byteMessage = convertToBytes(message.getMessage());
 
-		original = byteMessage;
-
-		System.out.println(byteMessage.length);
-
-		int chunksize = 4096;
+		//System.out.println(byteMessage.length);
 
 		// convert serialized byteMessage into chunks with hardcoded size
-		// TODO: check if dynamically assigning a chunk size is better
+		int chunksize = 4096;
 		byte[][] chunks = divideArray(byteMessage, chunksize);
 
 		int i = 0;
 		for(; i < chunks.length; i++){
 			BytesMessage msg = new BytesMessage();
 			msg.bytes = chunks[i];
-			// TODO: check whether there is a better way to set the id for reassembling
-			msg.id = i;
-			//System.out.println(msg.id + " A " + msg.bytes);
 			msg.receiver = receiver;
 			msg.sender = this.sender();
 			msg.length = byteMessage.length;
+			msg.original = byteMessage;
 			receiverProxy.tell(msg, this.self());
 		}
 	}
@@ -145,18 +140,13 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 	private void handle(BytesMessage message) {
 		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
-
-		// TODO: reassemble the chunks
-		System.out.println(message.id + " B " + message.bytes);
-
 		for (int i=0; i< message.bytes.length; i++){
 			messageList.add(message.bytes[i]);
 		}
 
-		System.out.println(messageList.size());
+		//System.out.println(messageList.size());
 
 		if (messageList.size() == message.length) {
-			System.out.println(messageList.size());
 			byte[] result = messageList.stream()
 					.collect(
 							() -> new ByteArrayOutputStream(),
@@ -164,23 +154,22 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 								b.write(e);
 							},
 							(a, b) -> {}).toByteArray();
-			System.out.println(result);
-			System.out.println(result.length);
 
+			// TODO: check whether this kryo stuff is needed
+			/*
 			Object object = null;
 			Kryo kryo = new Kryo();
 			ByteArrayInputStream stream = new ByteArrayInputStream(result);
 			Input input = new Input(stream);
 			object = kryo.readClassAndObject(input);
 			input.close();
+			*/
 
+			// check whether the original message matches the resulting message
 			end = result;
-			System.out.println(original == end);
+			System.out.println(Arrays.equals(message.original,end));
 
-			message.getReceiver().tell(object, message.getSender());
-
-		} else {
-			System.out.println("done");
+			message.getReceiver().tell(result, message.getSender());
 		}
 	}
 }
