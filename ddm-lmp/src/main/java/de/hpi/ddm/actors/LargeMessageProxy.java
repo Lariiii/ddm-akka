@@ -141,7 +141,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 			// check whether the original message matches the resulting message
 			// to test whether we get the same byte array after reassembling
-			System.out.println(Arrays.equals(message.original, result));
+			// System.out.println(Arrays.equals(message.original, result));
 
 			message.getReceiver().tell(result, message.getSender());
 		}
