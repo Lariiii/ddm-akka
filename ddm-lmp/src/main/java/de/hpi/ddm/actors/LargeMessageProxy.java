@@ -25,9 +25,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 	private ArrayList<Byte> messageList = new ArrayList<>();
 
-	// to test whether we get the same byte array after reassembling
-	private byte[] end;
-
 	////////////////////
 	// Actor Messages //
 	////////////////////
@@ -42,7 +39,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	@Data @NoArgsConstructor @AllArgsConstructor
 	public static class BytesMessage<T> implements Serializable {
 		private static final long serialVersionUID = 4057807743872319842L;
-		// TODO: change byte[] into T again
 		private T bytes;
 		private int length;
 		private ActorRef sender;
@@ -78,12 +74,13 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		byte[] byteMessage = convertToBytes(message.getMessage());
 
 		int chunksize = 4096;
+		assert byteMessage != null;
 		byte[][] chunks = divideArray(byteMessage, chunksize);
 
 		// convert serialized byteMessage into chunks with hardcoded size
 		int i = 0;
 		for(; i < chunks.length; i++){
-			BytesMessage<byte[]> msg = new BytesMessage();
+			BytesMessage msg = new BytesMessage();
 			msg.bytes = chunks[i];
 			msg.receiver = receiver;
 			msg.sender = this.sender();
@@ -138,15 +135,13 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		if (messageList.size() == message.length) {
 			byte[] result = messageList.stream()
 					.collect(
-							() -> new ByteArrayOutputStream(),
-							(b, e) -> {
-								b.write(e);
-							},
+							ByteArrayOutputStream::new,
+							ByteArrayOutputStream::write,
 							(a, b) -> {}).toByteArray();
 
 			// check whether the original message matches the resulting message
-			end = result;
-			System.out.println(Arrays.equals(message.original,end));
+			// to test whether we get the same byte array after reassembling
+			System.out.println(Arrays.equals(message.original, result));
 
 			message.getReceiver().tell(result, message.getSender());
 		}
