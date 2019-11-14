@@ -6,7 +6,6 @@ import java.util.Arrays;
 
 import akka.actor.*;
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -76,22 +75,12 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		ActorRef receiver = message.getReceiver();
 		ActorSelection receiverProxy = this.context().actorSelection(receiver.path().child(DEFAULT_NAME));
 
-		// This will definitely fail in a distributed setting if the serialized message is large!
-		// Solution options:
-		// 1. Serialize the object and send its bytes batch-wise (make sure to use artery's side channel then).
-		// 2. Serialize the object and send its bytes via Akka streaming.
-		// 3. Send the object via Akka's http client-server component.
-		// 4. Other ideas ...
-
-		// serialize message into byte array using kryo
 		byte[] byteMessage = convertToBytes(message.getMessage());
 
-		//System.out.println(byteMessage.length);
-
-		// convert serialized byteMessage into chunks with hardcoded size
 		int chunksize = 4096;
 		byte[][] chunks = divideArray(byteMessage, chunksize);
 
+		// convert serialized byteMessage into chunks with hardcoded size
 		int i = 0;
 		for(; i < chunks.length; i++){
 			BytesMessage msg = new BytesMessage();
@@ -104,6 +93,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		}
 	}
 
+	// serialize message into byte array using kryo
 	// kryo documentation: https://github.com/EsotericSoftware/kryo
 	private byte[] convertToBytes(Object message) {
         try {
@@ -138,13 +128,11 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		return arrays;
 	}
 
+	// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
 	private void handle(BytesMessage message) {
-		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
 		for (int i=0; i< message.bytes.length; i++){
 			messageList.add(message.bytes[i]);
 		}
-
-		//System.out.println(messageList.size());
 
 		if (messageList.size() == message.length) {
 			byte[] result = messageList.stream()
@@ -154,16 +142,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 								b.write(e);
 							},
 							(a, b) -> {}).toByteArray();
-
-			// TODO: check whether this kryo stuff is needed
-			/*
-			Object object = null;
-			Kryo kryo = new Kryo();
-			ByteArrayInputStream stream = new ByteArrayInputStream(result);
-			Input input = new Input(stream);
-			object = kryo.readClassAndObject(input);
-			input.close();
-			*/
 
 			// check whether the original message matches the resulting message
 			end = result;
