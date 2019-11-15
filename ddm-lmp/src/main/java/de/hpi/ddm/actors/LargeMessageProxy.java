@@ -6,6 +6,7 @@ import java.util.Arrays;
 
 import akka.actor.*;
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -143,7 +144,14 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			// to test whether we get the same byte array after reassembling
 			// System.out.println(Arrays.equals(message.original, result));
 
-			message.getReceiver().tell(result, message.getSender());
+			Object object = null;
+			Kryo kryo = new Kryo();
+			ByteArrayInputStream stream = new ByteArrayInputStream(result);
+			Input input = new Input(stream);
+			object = kryo.readClassAndObject(input);
+			input.close();
+
+			message.getReceiver().tell(object, message.getSender());
 		}
 	}
 }
