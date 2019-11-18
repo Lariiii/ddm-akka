@@ -100,7 +100,21 @@ public class Master extends AbstractLoggingActor {
 		// 2. If we process the batches early, we can achieve latency hiding. /////////////////////////////////
 		// TODO: Implement the processing of the data for the concrete assignment. ////////////////////////////
 		///////////////////////////////////////////////////////////////////////////////////////////////////////
-		
+
+		// der reader schickt schon lauter chunks als message an den Master, wodurch diese Methode gerufen wird
+
+		// Maybe only use first worker and first line of data
+
+		// Master creates Array with possible chars and int with length of pw (new object)
+		// Master sends object and hint to crack
+		// Worker cracks hint:
+			// Worker creates heap permutation
+			// Worker hashes permutation
+			// Worker compares hash and hint
+			// if equal: send missing character from array in hint
+
+		// goal: have one worker crack one line of data (batches in workers.size()?)
+
 		if (message.getLines().isEmpty()) {
 			this.collector.tell(new Collector.PrintMessage(), this.self());
 			this.terminate();
