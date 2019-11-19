@@ -144,8 +144,13 @@ public class Master extends AbstractLoggingActor {
 			hintMessageQueue.add(request);
 		}
 
-		//TODO: remove this and distribute to all workers
-		this.workers.get(0).tell(request, this.self());
+		//TODO: check whether this distributes to all workers
+		for (ActorRef worker : this.workers) {
+			//System.out.println(worker);
+			worker.tell(request, this.self());
+		}
+
+		//this.workers.get(0).tell(request, this.self());
 
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());
