@@ -1,9 +1,7 @@
 package de.hpi.ddm.actors;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
@@ -32,6 +30,8 @@ public class Master extends AbstractLoggingActor {
 		this.workers = new ArrayList<>();
 	}
 
+	public static Queue<WorkerHintMessage> hintMessageQueue;
+
 	////////////////////
 	// Actor Messages //
 	////////////////////
@@ -40,7 +40,7 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = 8107711559395710783L;
 		int id;
 		T[] hashedHints;
-		int hintLength;
+		int passwordLength;
 		String characterUniverse;
 		String result;
 	}
@@ -129,17 +129,24 @@ public class Master extends AbstractLoggingActor {
 			this.terminate();
 			return;
 		}
-		
+
+		hintMessageQueue = new LinkedList<>();
+		WorkerHintMessage<String> request = new WorkerHintMessage<>();
+
 		for (String[] line : message.getLines()){
-			WorkerHintMessage<String> request = new WorkerHintMessage<>();
+			//WorkerHintMessage<String> request = new WorkerHintMessage<>();
 			request.id = Integer.parseInt(line[0]);
 			request.characterUniverse = line[2];
-			request.hintLength = Integer.parseInt(line[3]) - 1;
+			request.passwordLength = Integer.parseInt(line[3]);
 			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
 
-			this.workers.get(0).tell(request, this.self());
+			//TODO: send the WorkerHintMessages from the queue to idle workers
+			hintMessageQueue.add(request);
 		}
-		
+
+		//TODO: remove this and distribute to all workers
+		this.workers.get(0).tell(request, this.self());
+
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}

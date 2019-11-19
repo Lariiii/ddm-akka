@@ -77,24 +77,59 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
-		System.out.println(workerHintMessage.id);
-		// Worker creates heap permutation
-		// Worker hashes permutation
-		// Worker compares hash and hint
-		// if equal: send missing character from array in hint
 
-		char[] characters =  workerHintMessage.characterUniverse.toCharArray();
-		List<String> permutations = new LinkedList<String>();
-		heapPermutation(characters, characters.length, characters.length, permutations);
-		// System.out.println(permutations.get(0));
+		//System.out.println(workerHintMessage.hashedHints[0]);
 
-		// alle Hints in Hintliste
-		// 9 Hint universes --> 9 Permutationslisten
-		// passworuniverse anlegen
-		// alle permutationslisteneinträge mit allen Hints abgleichen
+		// create hint universes (with each missing one character from the characterUniverse)
+		List<char[]> hintUniverses = new LinkedList<>();
+
+		for (int i = 0; i < workerHintMessage.passwordLength+1; i++) {
+			char[] hintUniverse;
+			StringBuilder sb = new StringBuilder();
+			sb.append(workerHintMessage.characterUniverse);
+			sb.deleteCharAt(i);
+			hintUniverse = sb.toString().toCharArray();
+			hintUniverses.add(hintUniverse);
+		}
+
+		List<String> crackedHints = new LinkedList<>();
+
+		// calculate permutations for each hintUniverse (with 10 characters the amount of permutations is 3628800)
+		for (int i = 0; i < hintUniverses.size(); i++) {
+			List<String> permutations = new LinkedList<>();
+			char[] oneUniverse = hintUniverses.get(i);
+			heapPermutation(oneUniverse, oneUniverse.length, oneUniverse.length, permutations);
+			//System.out.println(permutations.size());
+
+			// hash all permutations
+			for (int j = 0; j < permutations.size(); j++) {
+				String hashedPerm;
+				hashedPerm = hash(permutations.get(j));
+				//System.out.println(hashedPerm);
+
+				// compare hashed permutations with hashed hints
+				for (int k = 0; k < workerHintMessage.hashedHints.length; k++) {
+
+					//System.out.println(workerHintMessage.hashedHints[k]);
+					//System.out.println(hashedPerm);
+
+					// if equal: send missing character from array in hint
+					if(hashedPerm.equals(workerHintMessage.hashedHints[k])) {
+						System.out.println(hashedPerm + " " + workerHintMessage.hashedHints[k]);
+						crackedHints.add(permutations.get(j));
+					}
+				}
+			}
+		}
+
+		for (int i = 0; i < crackedHints.size(); i++) {
+			System.out.println(crackedHints.get(i));
+		}
+
 		// gefunden --> Hint aus der Hintliste und weiter im Text
 		// nicht gefunden --> Buchstabe in passworduniverse einfügen
 
+		//TODO: send hint message containing the two characters for the password permutation back to master
 	}
 
 	private void handle(CurrentClusterState message) {
