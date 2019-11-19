@@ -36,6 +36,15 @@ public class Master extends AbstractLoggingActor {
 	// Actor Messages //
 	////////////////////
 
+	public static class WorkerHintMessage<T> implements Serializable {
+		private static final long serialVersionUID = 8107711559395710783L;
+		int id;
+		T[] hashedHints;
+		int hintLength;
+		String characterUniverse;
+		String result;
+	}
+
 	@Data
 	public static class StartMessage implements Serializable {
 		private static final long serialVersionUID = -50374816448627600L;
@@ -121,8 +130,15 @@ public class Master extends AbstractLoggingActor {
 			return;
 		}
 		
-		for (String[] line : message.getLines())
-			System.out.println(Arrays.toString(line));
+		for (String[] line : message.getLines()){
+			WorkerHintMessage<String> request = new WorkerHintMessage<>();
+			request.id = Integer.parseInt(line[0]);
+			request.characterUniverse = line[2];
+			request.hintLength = Integer.parseInt(line[3]) - 1;
+			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
+
+			this.workers.get(0).tell(request, this.self());
+		}
 		
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());

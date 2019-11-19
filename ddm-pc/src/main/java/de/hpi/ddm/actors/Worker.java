@@ -3,6 +3,7 @@ package de.hpi.ddm.actors;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.LinkedList;
 import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
@@ -70,8 +71,30 @@ public class Worker extends AbstractLoggingActor {
 				.match(CurrentClusterState.class, this::handle)
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
+				.match(Master.WorkerHintMessage.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
+	}
+
+	private void handle(Master.WorkerHintMessage workerHintMessage) {
+		System.out.println(workerHintMessage.id);
+		// Worker creates heap permutation
+		// Worker hashes permutation
+		// Worker compares hash and hint
+		// if equal: send missing character from array in hint
+
+		char[] characters =  workerHintMessage.characterUniverse.toCharArray();
+		List<String> permutations = new LinkedList<String>();
+		heapPermutation(characters, characters.length, characters.length, permutations);
+		// System.out.println(permutations.get(0));
+
+		// alle Hints in Hintliste
+		// 9 Hint universes --> 9 Permutationslisten
+		// passworuniverse anlegen
+		// alle permutationslisteneinträge mit allen Hints abgleichen
+		// gefunden --> Hint aus der Hintliste und weiter im Text
+		// nicht gefunden --> Buchstabe in passworduniverse einfügen
+
 	}
 
 	private void handle(CurrentClusterState message) {
