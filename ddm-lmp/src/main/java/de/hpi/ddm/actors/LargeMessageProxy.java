@@ -44,7 +44,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		private int length;
 		private ActorRef sender;
 		private ActorRef receiver;
-		private byte[] original;
 	}
 	
 	/////////////////
@@ -86,7 +85,6 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			msg.receiver = receiver;
 			msg.sender = this.sender();
 			msg.length = byteMessage.length;
-			msg.original = byteMessage;
 			receiverProxy.tell(msg, this.self());
 		}
 	}
