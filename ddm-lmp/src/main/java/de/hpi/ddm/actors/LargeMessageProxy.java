@@ -3,7 +3,6 @@ package de.hpi.ddm.actors;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
 
 import akka.actor.*;
 import com.esotericsoftware.kryo.Kryo;
@@ -26,6 +25,9 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 
 	private ArrayList<Byte> messageList = new ArrayList<>();
+	private byte[][] chunks;
+	private byte[] byteMessage;
+	private int iterator = 0;
 
 	////////////////////
 	// Actor Messages //
@@ -42,9 +44,26 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	public static class BytesMessage<T> implements Serializable {
 		private static final long serialVersionUID = 4057807743872319842L;
 		private T bytes;
-		private int length;
 		private ActorRef sender;
 		private ActorRef receiver;
+		private Integer origMessageLength;
+	}
+
+	@Data @NoArgsConstructor @AllArgsConstructor
+	public static class ChunkedLargeMessage implements Serializable {
+		private static final long serialVersionUID = 1556023214536514407L;
+		private ActorRef sender;
+		private ActorRef receiver;
+		private Integer origMessageLength;
+	}
+
+	@Data @NoArgsConstructor @AllArgsConstructor
+	public static class ChunkedSendMessage<T> implements Serializable {
+		private static final long serialVersionUID = -7209931488302530105L;
+		private ActorRef sender;
+		private ActorRef receiver;
+		private Integer origMessageLength;
+		private Integer iter;
 	}
 
 	/////////////////
@@ -64,32 +83,30 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		return receiveBuilder()
 				.match(LargeMessage.class, this::handle)
 				.match(BytesMessage.class, this::handle)
+				.match(ChunkedLargeMessage.class, this::handle)
+				.match(ChunkedSendMessage.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
-	private void handle(LargeMessage<?> message) throws InterruptedException {
+	private void handle(LargeMessage<?> message) {
 		ActorRef receiver = message.getReceiver();
 		ActorSelection receiverProxy = this.context().actorSelection(receiver.path().child(DEFAULT_NAME));
 
-		byte[] byteMessage = convertToBytes(message.getMessage());
+		byteMessage = convertToBytes(message.getMessage());
 
-		int chunksize = 10024;
+		int chunksize = 4096;
 		assert byteMessage != null;
-		byte[][] chunks = divideArray(byteMessage, chunksize);
 
+		chunks = divideArray(byteMessage, chunksize);
 
-		// convert serialized byteMessage into chunks with hardcoded size
-		int i = 0;
-		for(; i < chunks.length; i++){
-			BytesMessage msg = new BytesMessage();
-			msg.bytes = chunks[i];
-			msg.receiver = receiver;
-			msg.sender = this.sender();
-			msg.length = byteMessage.length;
-			receiverProxy.tell(msg, this.self());
-			TimeUnit.NANOSECONDS.sleep(1);
-		}
+		// send chunked messages
+		ChunkedLargeMessage aa = new ChunkedLargeMessage();
+		aa.sender = this.sender();
+		aa.receiver = receiver;
+		aa.origMessageLength = byteMessage.length;
+
+		receiverProxy.tell(aa, this.self());
 
 	}
 
@@ -128,24 +145,42 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		return arrays;
 	}
 
+	private void handle(ChunkedLargeMessage message) {
+		ChunkedSendMessage send = new ChunkedSendMessage();
+		send.sender = message.sender;
+		send.receiver = message.receiver;
+		send.origMessageLength = message.origMessageLength;
+		send.iter = iterator;
+		this.sender().tell(send, this.self());
+	}
+
+	// use global iterator to iterate through chunks and send each chunk individually
+	private void handle(ChunkedSendMessage message) {
+		BytesMessage msg = new BytesMessage();
+		msg.bytes = chunks[message.iter];
+		msg.receiver = message.receiver;
+		msg.sender = message.sender;
+		msg.origMessageLength = message.origMessageLength;
+		this.sender().tell(msg, this.self());
+	}
+
 	// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
 	private void handle(BytesMessage<?> message) {
+		// reassemble chunks into one list
+		byte[] byteMessage1 = ((byte[]) message.bytes);
 		for (int i = 0; i < ((byte[]) message.bytes).length; i++){
-			byte[] byteMessage = ((byte[]) message.bytes);
-			messageList.add(byteMessage[i]);
+			messageList.add(byteMessage1[i]);
 		}
 
-		if (messageList.size() == message.length) {
+		// convert message list to bytes after the last chunk is send
+		if (messageList.size() == message.origMessageLength) {
 			byte[] result = messageList.stream()
 					.collect(
 							ByteArrayOutputStream::new,
 							ByteArrayOutputStream::write,
 							(a, b) -> {}).toByteArray();
 
-			// check whether the original message matches the resulting message
-			// to test whether we get the same byte array after reassembling
-			// System.out.println(Arrays.equals(message.original, result));
-
+			// deserialize byte message
 			Object object;
 			Kryo kryo = new Kryo();
 			ByteArrayInputStream stream = new ByteArrayInputStream(result);
@@ -154,6 +189,17 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			input.close();
 
 			message.getReceiver().tell(object, message.getSender());
+		} else {
+			// increase iterator to send next chunk
+			iterator += 1;
+
+			ChunkedSendMessage next = new ChunkedSendMessage();
+			next.sender = message.sender;
+			next.receiver = message.receiver;
+			next.origMessageLength = message.origMessageLength;
+			next.iter = iterator;
+
+			this.sender().tell(next, this.self());
 		}
 	}
 }
