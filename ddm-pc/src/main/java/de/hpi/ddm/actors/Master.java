@@ -42,6 +42,7 @@ public class Master extends AbstractLoggingActor {
 		T[] hashedHints;
 		int passwordLength;
 		String characterUniverse;
+		List<char[]> hintUniverses;
 		String result;
 	}
 
@@ -134,11 +135,33 @@ public class Master extends AbstractLoggingActor {
 		WorkerHintMessage<String> request = new WorkerHintMessage<>();
         int nextWorker = 0;
 
+        List<char[]> hintUniverses = new LinkedList<>();
+
 		for (String[] line : message.getLines()){
 			//WorkerHintMessage<String> request = new WorkerHintMessage<>();
+
+            // Todo: global machen, damit es nicht jede für Zeile oder jeden Chunk ausgeführt wird
+            int passwordLength = Integer.parseInt(line[3]);
+            String characterUniverse = line[2];
+
+            // create all possible universes of the hints and collect them
+            if (hintUniverses.isEmpty()) {
+                for (int i = 0; i <= passwordLength; i++) {
+                    char[] hintUniverse;
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(characterUniverse);
+                    sb.deleteCharAt(i);
+                    hintUniverse = sb.toString().toCharArray();
+                    hintUniverses.add(hintUniverse);
+                }
+                // hier erstmal allen Workern mit neuer Message alles schicken, was sie nur einmal brauchen
+                // (passwordLength, hintUniverses, characterUniverse)
+            }
+
 			request.id = Integer.parseInt(line[0]);
-			request.characterUniverse = line[2];
-			request.passwordLength = Integer.parseInt(line[3]);
+			request.characterUniverse = characterUniverse;
+			request.hintUniverses = hintUniverses;
+			request.passwordLength = passwordLength;
 			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
 
 			//TODO: send the WorkerHintMessages from the queue to idle workers
@@ -146,7 +169,7 @@ public class Master extends AbstractLoggingActor {
 
             workers.get(nextWorker).tell(request, this.self());
             nextWorker = ((nextWorker + 1) % workers.size());
-            System.out.println(nextWorker);
+            //System.out.println(nextWorker);
 		}
 
 		//TODO: check whether this distributes to all workers

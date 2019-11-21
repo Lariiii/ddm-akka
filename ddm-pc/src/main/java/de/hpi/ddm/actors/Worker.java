@@ -1,8 +1,10 @@
 package de.hpi.ddm.actors;
 
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Array;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -44,8 +46,10 @@ public class Worker extends AbstractLoggingActor {
 
 	private Member masterSystem;
 	private final Cluster cluster;
-	
-	/////////////////////
+    private List<List<String>> permutationsList = new LinkedList<>();
+    private String[] permutations = new Arr
+
+    /////////////////////
 	// Actor Lifecycle //
 	/////////////////////
 
@@ -81,50 +85,80 @@ public class Worker extends AbstractLoggingActor {
 		//System.out.println(workerHintMessage.hashedHints[0]);
 
 		// create hint universes (with each missing one character from the characterUniverse)
+		/*
 		List<char[]> hintUniverses = new LinkedList<>();
 
-		for (int i = 0; i < workerHintMessage.passwordLength+1; i++) {
-			char[] hintUniverse;
-			StringBuilder sb = new StringBuilder();
-			sb.append(workerHintMessage.characterUniverse);
-			sb.deleteCharAt(i);
-			hintUniverse = sb.toString().toCharArray();
-			hintUniverses.add(hintUniverse);
-		}
+		if(permutationsList.isEmpty()) {
+            for (int i = 0; i < workerHintMessage.passwordLength + 1; i++) {
+                char[] hintUniverse;
+                StringBuilder sb = new StringBuilder();
+                sb.append(workerHintMessage.characterUniverse);
+                sb.deleteCharAt(i);
+                hintUniverse = sb.toString().toCharArray();
+                hintUniverses.add(hintUniverse);
+                heapPermutation(hintUniverse, hintUniverse.length, hintUniverse.length, permutations);
+                // System.out.println(hintUniverse);
+            }
+        }
+		*/
+
+        List<char[]> hintUniverses = workerHintMessage.hintUniverses;
+        if(permutationsList.isEmpty()) {
+            for (char[] hintUniverse : hintUniverses) {
+                List<String> permutations = new LinkedList<>();
+                heapPermutation(hintUniverse, hintUniverse.length, hintUniverse.length, permutations);
+                permutationsList.add(permutations);
+
+            }
+        }
 
 		List<String> crackedHints = new LinkedList<>();
 
-		// calculate permutations for each hintUniverse (with 10 characters the amount of permutations is 3628800)
-		for (int i = 0; i < hintUniverses.size(); i++) {
-			List<String> permutations = new LinkedList<>();
-			char[] oneUniverse = hintUniverses.get(i);
-			heapPermutation(oneUniverse, oneUniverse.length, oneUniverse.length, permutations);
-			//System.out.println(permutations.size());
+        // for all permutations
+        for (List<String> permutations: permutationsList) {
+            for (String permutation : permutations) {
+                // hash the permutation
+                String hashedPerm = hash(permutation);
+                for (Object hint : workerHintMessage.hashedHints) {
+                    // compare it with the hint
+                    if (hashedPerm.equals(hint)) {
+                        crackedHints.add(permutation);
+                    }
+                }
+            }
+        }
 
-			// hash all permutations
-			for (int j = 0; j < permutations.size(); j++) {
-				String hashedPerm;
-				hashedPerm = hash(permutations.get(j));
-				//System.out.println(hashedPerm);
+        // calculate permutations for each hintUniverse (with 10 characters the amount of permutations is 3628800)
+        /*
+        for (char[] oneUniverse : hintUniverses) {
+            List<String> permutations = new LinkedList<>();
+            heapPermutation(oneUniverse, oneUniverse.length, oneUniverse.length, permutations);
+            //System.out.println(permutations.size());
 
-				// compare hashed permutations with hashed hints
-				for (int k = 0; k < workerHintMessage.hashedHints.length; k++) {
+            // hash all permutations
+            for (String permutation : permutations) {
+                String hashedPerm;
+                hashedPerm = hash(permutation);
+                //System.out.println(hashedPerm);
 
-					//System.out.println(workerHintMessage.hashedHints[k]);
-					//System.out.println(hashedPerm);
+                // compare hashed permutations with hashed hints
+                for (int k = 0; k < workerHintMessage.hashedHints.length; k++) {
 
-					// if equal: send missing character from array in hint
-					if(hashedPerm.equals(workerHintMessage.hashedHints[k])) {
-						System.out.println(hashedPerm + " " + workerHintMessage.hashedHints[k]);
-						crackedHints.add(permutations.get(j));
-					}
-				}
-			}
-		}
+                    //System.out.println(workerHintMessage.hashedHints[k]);
+                    //System.out.println(hashedPerm);
 
-		for (int i = 0; i < crackedHints.size(); i++) {
-			System.out.println(crackedHints.get(i));
-		}
+                    // if equal: send missing character from array in hint
+                    if (hashedPerm.equals(workerHintMessage.hashedHints[k])) {
+                        System.out.println(hashedPerm + " " + workerHintMessage.hashedHints[k]);
+                        crackedHints.add(permutation);
+                    }
+                }
+            }
+        }
+         */
+        for (String crackedHint : crackedHints) {
+            System.out.println(crackedHint);
+        }
 
 		// gefunden --> Hint aus der Hintliste und weiter im Text
 		// nicht gefunden --> Buchstabe in passworduniverse einfügen
