@@ -132,6 +132,7 @@ public class Master extends AbstractLoggingActor {
 
 		hintMessageQueue = new LinkedList<>();
 		WorkerHintMessage<String> request = new WorkerHintMessage<>();
+        int nextWorker = 0;
 
 		for (String[] line : message.getLines()){
 			//WorkerHintMessage<String> request = new WorkerHintMessage<>();
@@ -142,13 +143,18 @@ public class Master extends AbstractLoggingActor {
 
 			//TODO: send the WorkerHintMessages from the queue to idle workers
 			hintMessageQueue.add(request);
+
+            workers.get(nextWorker).tell(request, this.self());
+            nextWorker = ((nextWorker + 1) % workers.size());
+            System.out.println(nextWorker);
 		}
 
 		//TODO: check whether this distributes to all workers
-		for (ActorRef worker : this.workers) {
+
+		/*for (ActorRef worker : this.workers) {
 			//System.out.println(worker);
 			worker.tell(request, this.self());
-		}
+		}*/
 
 		//this.workers.get(0).tell(request, this.self());
 
