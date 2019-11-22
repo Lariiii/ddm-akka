@@ -40,10 +40,7 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = 8107711559395710783L;
 		int id;
 		T[] hashedHints;
-		int passwordLength;
-		String characterUniverse;
-		List<char[]> hintUniverses;
-		String result;
+		HashMap<Character, char[]> hintUniverses;
 	}
 
 	@Data
@@ -111,75 +108,44 @@ public class Master extends AbstractLoggingActor {
 		// TODO: Implement the processing of the data for the concrete assignment. ////////////////////////////
 		///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		// der reader schickt schon lauter chunks als message an den Master, wodurch diese Methode gerufen wird
-
-		// Maybe only use first worker and first line of data
-
-		// Master creates Array with possible chars and int with length of pw (new object)
-		// Master sends object and hint to crack
-		// Worker cracks hint:
-			// Worker creates heap permutation
-			// Worker hashes permutation
-			// Worker compares hash and hint
-			// if equal: send missing character from array in hint
-
-		// goal: have one worker crack one line of data (batches in workers.size()?)
-
 		if (message.getLines().isEmpty()) {
 			this.collector.tell(new Collector.PrintMessage(), this.self());
 			this.terminate();
 			return;
 		}
 
-		hintMessageQueue = new LinkedList<>();
-		WorkerHintMessage<String> request = new WorkerHintMessage<>();
-        int nextWorker = 0;
+		// create hint character universes
+		// get character set and password length from first line
+		String[] firstLine = message.getLines().get(0);
+		HashMap<Character, char[]> hintUniverses = new HashMap<>();
+		int passwordLength = Integer.parseInt(firstLine[3]);
+		String characterUniverse = firstLine[2];
 
-        List<char[]> hintUniverses = new LinkedList<>();
-
-		for (String[] line : message.getLines()){
-			//WorkerHintMessage<String> request = new WorkerHintMessage<>();
-
-            // Todo: global machen, damit es nicht jede für Zeile oder jeden Chunk ausgeführt wird
-            int passwordLength = Integer.parseInt(line[3]);
-            String characterUniverse = line[2];
-
-            // create all possible universes of the hints and collect them
-            if (hintUniverses.isEmpty()) {
-                for (int i = 0; i <= passwordLength; i++) {
-                    char[] hintUniverse;
-                    StringBuilder sb = new StringBuilder();
-                    sb.append(characterUniverse);
-                    sb.deleteCharAt(i);
-                    hintUniverse = sb.toString().toCharArray();
-                    hintUniverses.add(hintUniverse);
-                }
-                // hier erstmal allen Workern mit neuer Message alles schicken, was sie nur einmal brauchen
-                // (passwordLength, hintUniverses, characterUniverse)
-            }
-
-			request.id = Integer.parseInt(line[0]);
-			request.characterUniverse = characterUniverse;
-			request.hintUniverses = hintUniverses;
-			request.passwordLength = passwordLength;
-			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
-
-			//TODO: send the WorkerHintMessages from the queue to idle workers
-			hintMessageQueue.add(request);
-
-            workers.get(nextWorker).tell(request, this.self());
-            nextWorker = ((nextWorker + 1) % workers.size());
-            //System.out.println(nextWorker);
+		if (hintUniverses.isEmpty()) {
+			for (int i = 0; i <= passwordLength; i++) {
+				char[] hintUniverse;
+				StringBuilder sb = new StringBuilder();
+				sb.append(characterUniverse);
+				char hintKey = sb.charAt(i);
+				sb.deleteCharAt(i);
+				hintUniverse = sb.toString().toCharArray();
+				hintUniverses.put(hintKey, hintUniverse);
+			}
 		}
 
-		//TODO: check whether this distributes to all workers
+		WorkerHintMessage<String> request = new WorkerHintMessage<>();
+		request.id = Integer.parseInt(firstLine[0]);
+		request.hintUniverses = hintUniverses;
+		request.hashedHints = Arrays.copyOfRange(firstLine, 5, firstLine.length);
 
-		/*for (ActorRef worker : this.workers) {
-			//System.out.println(worker);
-			worker.tell(request, this.self());
-		}*/
+        int nextWorker = 0;
 
-		//this.workers.get(0).tell(request, this.self());
+		workers.get(nextWorker).tell(request, this.self());
+		nextWorker = ((nextWorker + 1) % workers.size());
+
+		//TODO: loop this for all lines
+		//for (String[] line : message.getLines()){
+		//}
 
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());

@@ -4,9 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Array;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
@@ -19,6 +17,7 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
+import scala.Char;
 
 public class Worker extends AbstractLoggingActor {
 
@@ -46,8 +45,7 @@ public class Worker extends AbstractLoggingActor {
 
 	private Member masterSystem;
 	private final Cluster cluster;
-    private List<List<String>> permutationsList = new LinkedList<>();
-    private String[] permutations = new Arr
+	HashMap<Character, HashSet> allPermutations = new HashMap<>();
 
     /////////////////////
 	// Actor Lifecycle //
@@ -82,86 +80,28 @@ public class Worker extends AbstractLoggingActor {
 
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
 
-		//System.out.println(workerHintMessage.hashedHints[0]);
 
-		// create hint universes (with each missing one character from the characterUniverse)
-		/*
-		List<char[]> hintUniverses = new LinkedList<>();
+		//workerHintMessage.hintUniverses.forEach((key,value) -> System.out.println(key + " = " + value));
+		if (allPermutations.isEmpty()) {
+			Iterator<Map.Entry<Character, char[]>> it = workerHintMessage.hintUniverses.entrySet().iterator();
+			while (it.hasNext()) {
+				Map.Entry<Character, char[]> pair = it.next();
+				HashSet<String> permutationSet = new HashSet<>();
+				heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
+				allPermutations.put(pair.getKey(), permutationSet);
+			}
+		}
 
-		if(permutationsList.isEmpty()) {
-            for (int i = 0; i < workerHintMessage.passwordLength + 1; i++) {
-                char[] hintUniverse;
-                StringBuilder sb = new StringBuilder();
-                sb.append(workerHintMessage.characterUniverse);
-                sb.deleteCharAt(i);
-                hintUniverse = sb.toString().toCharArray();
-                hintUniverses.add(hintUniverse);
-                heapPermutation(hintUniverse, hintUniverse.length, hintUniverse.length, permutations);
-                // System.out.println(hintUniverse);
-            }
-        }
-		*/
-
-        List<char[]> hintUniverses = workerHintMessage.hintUniverses;
-        if(permutationsList.isEmpty()) {
-            for (char[] hintUniverse : hintUniverses) {
-                List<String> permutations = new LinkedList<>();
-                heapPermutation(hintUniverse, hintUniverse.length, hintUniverse.length, permutations);
-                permutationsList.add(permutations);
-
-            }
-        }
-
-		List<String> crackedHints = new LinkedList<>();
-
-        // for all permutations
-        for (List<String> permutations: permutationsList) {
-            for (String permutation : permutations) {
-                // hash the permutation
-                String hashedPerm = hash(permutation);
-                for (Object hint : workerHintMessage.hashedHints) {
-                    // compare it with the hint
-                    if (hashedPerm.equals(hint)) {
-                        crackedHints.add(permutation);
-                    }
-                }
-            }
-        }
-
-        // calculate permutations for each hintUniverse (with 10 characters the amount of permutations is 3628800)
-        /*
-        for (char[] oneUniverse : hintUniverses) {
-            List<String> permutations = new LinkedList<>();
-            heapPermutation(oneUniverse, oneUniverse.length, oneUniverse.length, permutations);
-            //System.out.println(permutations.size());
-
-            // hash all permutations
-            for (String permutation : permutations) {
-                String hashedPerm;
-                hashedPerm = hash(permutation);
-                //System.out.println(hashedPerm);
-
-                // compare hashed permutations with hashed hints
-                for (int k = 0; k < workerHintMessage.hashedHints.length; k++) {
-
-                    //System.out.println(workerHintMessage.hashedHints[k]);
-                    //System.out.println(hashedPerm);
-
-                    // if equal: send missing character from array in hint
-                    if (hashedPerm.equals(workerHintMessage.hashedHints[k])) {
-                        System.out.println(hashedPerm + " " + workerHintMessage.hashedHints[k]);
-                        crackedHints.add(permutation);
-                    }
-                }
-            }
-        }
-         */
-        for (String crackedHint : crackedHints) {
-            System.out.println(crackedHint);
-        }
-
-		// gefunden --> Hint aus der Hintliste und weiter im Text
-		// nicht gefunden --> Buchstabe in passworduniverse einfügen
+		Iterator<Map.Entry<Character, HashSet>> it = allPermutations.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry<Character, HashSet> pair = it.next();
+			for(Object hint : workerHintMessage.hashedHints) {
+				if (pair.getValue().contains(hint)) {
+					System.out.println(hint);
+					System.out.println(pair.getKey());
+				}
+			}
+		}
 
 		//TODO: send hint message containing the two characters for the password permutation back to master
 	}
@@ -211,10 +151,10 @@ public class Worker extends AbstractLoggingActor {
 	// Generating all permutations of an array using Heap's Algorithm
 	// https://en.wikipedia.org/wiki/Heap's_algorithm
 	// https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-	private void heapPermutation(char[] a, int size, int n, List<String> l) {
+	private void heapPermutation(char[] a, int size, int n, HashSet<String> l) {
 		// If size is 1, store the obtained permutation
 		if (size == 1)
-			l.add(new String(a));
+			l.add(hash(new String(a)));
 
 		for (int i = 0; i < size; i++) {
 			heapPermutation(a, size - 1, n, l);
