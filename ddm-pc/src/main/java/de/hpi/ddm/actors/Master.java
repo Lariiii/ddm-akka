@@ -114,38 +114,35 @@ public class Master extends AbstractLoggingActor {
 			return;
 		}
 
+		HashMap<Character, char[]> hintUniverses = new HashMap<>();
+		int nextWorker = 0;
+
 		// create hint character universes
 		// get character set and password length from first line
-		String[] firstLine = message.getLines().get(0);
-		HashMap<Character, char[]> hintUniverses = new HashMap<>();
-		int passwordLength = Integer.parseInt(firstLine[3]);
-		String characterUniverse = firstLine[2];
+		for (String[] line: message.getLines()) {
+			int passwordLength = Integer.parseInt(line[3]);
+			String characterUniverse = line[2];
 
-		if (hintUniverses.isEmpty()) {
-			for (int i = 0; i <= passwordLength; i++) {
-				char[] hintUniverse;
-				StringBuilder sb = new StringBuilder();
-				sb.append(characterUniverse);
-				char hintKey = sb.charAt(i);
-				sb.deleteCharAt(i);
-				hintUniverse = sb.toString().toCharArray();
-				hintUniverses.put(hintKey, hintUniverse);
+			if (hintUniverses.isEmpty()) {
+				for (int i = 0; i <= passwordLength; i++) {
+					char[] hintUniverse;
+					StringBuilder sb = new StringBuilder();
+					sb.append(characterUniverse);
+					char hintKey = sb.charAt(i);
+					sb.deleteCharAt(i);
+					hintUniverse = sb.toString().toCharArray();
+					hintUniverses.put(hintKey, hintUniverse);
+				}
 			}
+
+			WorkerHintMessage<String> request = new WorkerHintMessage<>();
+			request.id = Integer.parseInt(line[0]);
+			request.hintUniverses = hintUniverses;
+			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
+
+			workers.get(nextWorker).tell(request, this.self());
+			nextWorker = ((nextWorker + 1) % workers.size());
 		}
-
-		WorkerHintMessage<String> request = new WorkerHintMessage<>();
-		request.id = Integer.parseInt(firstLine[0]);
-		request.hintUniverses = hintUniverses;
-		request.hashedHints = Arrays.copyOfRange(firstLine, 5, firstLine.length);
-
-        int nextWorker = 0;
-
-		workers.get(nextWorker).tell(request, this.self());
-		nextWorker = ((nextWorker + 1) % workers.size());
-
-		//TODO: loop this for all lines
-		//for (String[] line : message.getLines()){
-		//}
 
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());
