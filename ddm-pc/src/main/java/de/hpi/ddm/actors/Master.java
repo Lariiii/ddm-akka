@@ -40,6 +40,8 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = 8107711559395710783L;
 		int id;
 		T[] hashedHints;
+		int passwordLength;
+		String hashedPassword;
 		HashMap<Character, char[]> hintUniverses;
 	}
 
@@ -138,6 +140,8 @@ public class Master extends AbstractLoggingActor {
 			WorkerHintMessage<String> request = new WorkerHintMessage<>();
 			request.id = Integer.parseInt(line[0]);
 			request.hintUniverses = hintUniverses;
+			request.passwordLength = Integer.parseInt(line[3]);
+			request.hashedPassword = line[4];
 			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
 
 			workers.get(nextWorker).tell(request, this.self());

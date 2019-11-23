@@ -46,6 +46,8 @@ public class Worker extends AbstractLoggingActor {
 	private Member masterSystem;
 	private final Cluster cluster;
 	HashMap<Character, HashSet> allPermutations = new HashMap<>();
+	// for testing
+	private int workerNumber;
 
     /////////////////////
 	// Actor Lifecycle //
@@ -79,27 +81,57 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
+		List<Character> crackedCharacters = new LinkedList<>();
+		// workerHintMessage.hintUniverses.forEach((key,value) -> System.out.println(key + " = " + String.valueOf((char[]) value)));
 
-
-		//workerHintMessage.hintUniverses.forEach((key,value) -> System.out.println(key + " = " + value));
+		// generate all permutations for all possible hints (once)
 		if (allPermutations.isEmpty()) {
+			workerNumber = workerHintMessage.id;
+			System.out.println("GO! Worker " + workerNumber + " started permutating!");
 			Iterator<Map.Entry<Character, char[]>> it = workerHintMessage.hintUniverses.entrySet().iterator();
 			while (it.hasNext()) {
 				Map.Entry<Character, char[]> pair = it.next();
 				HashSet<String> permutationSet = new HashSet<>();
 				heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
 				allPermutations.put(pair.getKey(), permutationSet);
+				// for (String permutation : permutationSet) { System.out.println(permutation); }
 			}
+			System.out.println("DONE! Worker " + workerNumber + " done permutating!");
 		}
 
+		// crack hints
+		System.out.println("START! Worker " + workerNumber + " cracks hints!");
+		System.out.println("WORKER " + workerNumber + " allPermutations.size(): " + allPermutations.size());
 		Iterator<Map.Entry<Character, HashSet>> it = allPermutations.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry<Character, HashSet> pair = it.next();
+			// System.out.println("WORKER " + workerNumber + " hintKey: " + pair.getKey());
 			for(Object hint : workerHintMessage.hashedHints) {
+				// System.out.println("WORKER " + workerNumber + " bin in innerer for-Schleife");
 				if (pair.getValue().contains(hint)) {
-					System.out.println(hint);
-					System.out.println(pair.getKey());
+					System.out.println("HINT 1 of WORKER " + workerNumber + " with key: " + pair.getKey());
+					crackedCharacters.add(pair.getKey());
 				}
+			}
+		}
+		char[] crackedCharactersArray = new char[crackedCharacters.size()];
+		for (int i = 0; i < crackedCharacters.size(); i++) {
+			crackedCharactersArray[i] = crackedCharacters.get(i);
+		}
+
+		// TODO: Why is crackedCharactersArray empty?
+
+		// generate permutations for the password
+		System.out.println("START! Worker " + workerNumber + " creates passwordpermutations!");
+		System.out.println("crackedCharactersArray.length: " + crackedCharactersArray.length + "workerHintMessage.passwordLength: " + workerHintMessage.passwordLength);
+		HashSet<String> passwordPermutations = new HashSet<>();
+		heapPermutation(crackedCharactersArray, workerHintMessage.passwordLength, workerHintMessage.passwordLength, passwordPermutations);
+		System.out.println("DONE! Worker " + workerNumber + " created passwordpermutations!");
+
+		// crack password
+		for(String permutation : passwordPermutations) {
+			if (workerHintMessage.hashedPassword.equals(permutation)) {
+				System.out.println("YEAH, Worker " + workerNumber + " cracked password " + workerHintMessage.id);
 			}
 		}
 
