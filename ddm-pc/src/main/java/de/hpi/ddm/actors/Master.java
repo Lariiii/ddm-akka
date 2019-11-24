@@ -4,16 +4,13 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
-import akka.actor.Terminated;
+import akka.actor.*;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.commons.lang3.tuple.Pair;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 
@@ -22,7 +19,7 @@ public class Master extends AbstractLoggingActor {
 	////////////////////////
 	// Actor Construction //
 	////////////////////////
-	
+
 	public static final String DEFAULT_NAME = "master";
 
 	public static Props props(final ActorRef reader, final ActorRef collector) {
@@ -55,16 +52,19 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = -1427710472671723834L;
 		//public final ActorRef master;
 		public final int id;
-		public final HashMap<Character, char[]> hintUniverses;
+		public final Character hintCharacter;
+		public final char[] hintUniverse;
 		public final ActorRef replyTo;
 
 		public HintPermutationRequest(
 				int id,
-				HashMap<Character, char[]> hintUniverses,
+				Character hintCharacter,
+				char[] hintUniverse,
 				ActorRef replyTo
 		) {
 			this.id = id;
-			this.hintUniverses = hintUniverses;
+			this.hintCharacter = hintCharacter;
+			this.hintUniverse = hintUniverse;
 			this.replyTo = replyTo;
 		}
 		// Character hintCharacter;
@@ -74,10 +74,21 @@ public class Master extends AbstractLoggingActor {
 	// could probably also just be implemented as a general Response class with different contents
 	public static class HintPermutationResponse implements Serializable {
 		private static final long serialVersionUID = 7480612328579267137L;
-		public final ActorRef worker;
+		public final Character hintCharacter;
+		public final HashSet<String> permutationSet;
 
-		public HintPermutationResponse(ActorRef worker) {
-			this.worker = worker;
+		public HintPermutationResponse(Character hintCharacter, HashSet<String> permutationSet) {
+			this.hintCharacter = hintCharacter;
+			this.permutationSet = permutationSet;
+		}
+	}
+
+	public static class PermutationsMessage implements Serializable {
+		private static final long serialVersionUID = -112664771927463149L;
+		public final HashMap<Character, HashSet> allPermutations;
+
+		public PermutationsMessage(HashMap<Character, HashSet> allPermutations) {
+			this.allPermutations = allPermutations;
 		}
 	}
 
@@ -85,7 +96,7 @@ public class Master extends AbstractLoggingActor {
 	public static class StartMessage implements Serializable {
 		private static final long serialVersionUID = -50374816448627600L;
 	}
-	
+
 	@Data @NoArgsConstructor @AllArgsConstructor
 	public static class BatchMessage implements Serializable {
 		private static final long serialVersionUID = 8343040942748609598L;
@@ -96,7 +107,7 @@ public class Master extends AbstractLoggingActor {
 	public static class RegistrationMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
 	}
-	
+
 	/////////////////
 	// Actor State //
 	/////////////////
@@ -105,9 +116,10 @@ public class Master extends AbstractLoggingActor {
 	private final ActorRef collector;
 	private final List<ActorRef> workers;
 	private final List<ActorRef> workingWorkers;
+	private boolean permutationsDone = false;
 
 	private long startTime;
-	
+
 	/////////////////////
 	// Actor Lifecycle //
 	/////////////////////
@@ -135,7 +147,7 @@ public class Master extends AbstractLoggingActor {
 
 	protected void handle(StartMessage message) {
 		this.startTime = System.currentTimeMillis();
-		
+
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 
@@ -155,11 +167,24 @@ public class Master extends AbstractLoggingActor {
 			sb.deleteCharAt(i);
 			char[] hintUniverse = sb.toString().toCharArray();
 			hintUniverses.put(hintKey, hintUniverse);
+			System.out.println(hintUniverse);
 		}
 
+		int nextWorker = 0;
 		ArrayList<Future<Object>> futureList = new ArrayList<>();
 		Timeout timeout = new Timeout(5, TimeUnit.MINUTES);
 
+		System.out.println("MASTER sending tasks to workers");
+		for (Map.Entry<Character, char[]> hint : hintUniverses.entrySet()) {
+			Future<Object> future = Patterns.ask(
+					workers.get(nextWorker),
+					new HintPermutationRequest(nextWorker+1, hint.getKey(), hint.getValue(), this.self()),
+					timeout);
+			futureList.add(future);
+			//nextWorker = ((nextWorker + 1) % workers.size());
+		}
+
+		/*
 		for (int i = 0; i < workers.size(); i++) {
 			ActorRef worker = workers.get(i);
 
@@ -168,20 +193,32 @@ public class Master extends AbstractLoggingActor {
 					new HintPermutationRequest(i+1, hintUniverses, this.self()),
 					timeout);
 			futureList.add(future);
-			workingWorkers.add(worker);
+			// workingWorkers.add(worker);
+			nextWorker = ((nextWorker + 1) % workers.size());
 		}
+		 */
 
+		HashMap<Character, HashSet> allPermutations = new HashMap<>();
+
+		System.out.println("MASTER collecting results from workers");
 		for (Future<Object> future : futureList) {
 			try {
-				System.out.println(Await.result(future, timeout.duration()));
+				HintPermutationResponse output = (HintPermutationResponse) Await.result(future, timeout.duration());
+				allPermutations.put(output.hintCharacter, output.permutationSet);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
+
+		for (ActorRef worker : workers) {
+			worker.tell(new PermutationsMessage(allPermutations), this.self());
+		}
+
+		permutationsDone = true;
 	}
-	
+
 	protected void handle(BatchMessage message) {
-		
+
 		///////////////////////////////////////////////////////////////////////////////////////////////////////
 		// The input file is read in batches for two reasons: /////////////////////////////////////////////////
 		// 1. If we distribute the batches early, we might not need to hold the entire input data in memory. //
@@ -198,8 +235,10 @@ public class Master extends AbstractLoggingActor {
 		HashMap<Character, char[]> hintUniverses = new HashMap<>();
 		int nextWorker = 0;
 
-		String characterUniverse = message.getLines().get(0)[2];
-		requestHintPermutations(characterUniverse);
+		if (!permutationsDone) {
+			String characterUniverse = message.getLines().get(0)[2];
+			requestHintPermutations(characterUniverse);
+		}
 
 		// create hint character universes
 		// get character set and password length from first line
@@ -218,18 +257,18 @@ public class Master extends AbstractLoggingActor {
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
-	
+
 	protected void terminate() {
 		this.reader.tell(PoisonPill.getInstance(), ActorRef.noSender());
 		this.collector.tell(PoisonPill.getInstance(), ActorRef.noSender());
-		
+
 		for (ActorRef worker : this.workers) {
 			this.context().unwatch(worker);
 			worker.tell(PoisonPill.getInstance(), ActorRef.noSender());
 		}
-		
+
 		this.self().tell(PoisonPill.getInstance(), ActorRef.noSender());
-		
+
 		long executionTime = System.currentTimeMillis() - this.startTime;
 		this.log().info("Algorithm finished in {} ms", executionTime);
 	}
@@ -239,7 +278,7 @@ public class Master extends AbstractLoggingActor {
 		this.workers.add(this.sender());
 //		this.log().info("Registered {}", this.sender());
 	}
-	
+
 	protected void handle(Terminated message) {
 		this.context().unwatch(message.getActor());
 		this.workers.remove(message.getActor());

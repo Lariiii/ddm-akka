@@ -13,13 +13,15 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
+import org.apache.commons.lang3.tuple.Pair;
+
 
 public class Worker extends AbstractLoggingActor {
 
 	////////////////////////
 	// Actor Construction //
 	////////////////////////
-	
+
 	public static final String DEFAULT_NAME = "worker";
 
 	public static Props props() {
@@ -29,7 +31,7 @@ public class Worker extends AbstractLoggingActor {
 	public Worker() {
 		this.cluster = Cluster.get(this.context().system());
 	}
-	
+
 	////////////////////
 	// Actor Messages //
 	////////////////////
@@ -52,7 +54,7 @@ public class Worker extends AbstractLoggingActor {
 	@Override
 	public void preStart() {
 		Reaper.watchWithDefaultReaper(this);
-		
+
 		this.cluster.subscribe(this.self(), MemberUp.class, MemberRemoved.class);
 	}
 
@@ -73,23 +75,42 @@ public class Worker extends AbstractLoggingActor {
 				.match(MemberRemoved.class, this::handle)
 				.match(Master.WorkerHintMessage.class, this::handle)
 				.match(Master.HintPermutationRequest.class, this::handle)
+				.match(Master.PermutationsMessage.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
+	}
+
+	private void handle(Master.PermutationsMessage message) {
+		allPermutations = message.allPermutations;
 	}
 
 	private void handle(Master.HintPermutationRequest message) {
 		workerNumber = message.id;
 
 		System.out.println("GO! Worker " + workerNumber + " started permutating!");
+
+		System.out.println("Worker " + workerNumber + " is permutating on " + Arrays.toString(message.hintUniverse));
+		HashSet<String> permutationSet = new HashSet<>();
+		heapPermutation(
+				message.hintUniverse,
+				message.hintUniverse.length,
+				message.hintUniverse.length,
+				permutationSet
+		);
+		/*
 		for (Map.Entry<Character, char[]> pair : message.hintUniverses.entrySet()) {
+			System.out.println("Worker " + workerNumber + " is permutating on " + Arrays.toString(pair.getValue()));
 			HashSet<String> permutationSet = new HashSet<>();
 			heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
 			allPermutations.put(pair.getKey(), permutationSet);
 			// for (String permutation : permutationSet) { System.out.println(permutation); }
 		}
+		 */
 		System.out.println("DONE! Worker " + workerNumber + " done permutating!");
 
-		sender().tell(new Master.HintPermutationResponse(this.self()), this.self());
+		sender().tell(new Master.HintPermutationResponse(message.hintCharacter, permutationSet), this.self());
+
+		//sender().tell(new Master.HintPermutationResponse(this.self()), this.self());
 	}
 
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
@@ -98,11 +119,9 @@ public class Worker extends AbstractLoggingActor {
 		// crack hints
 		System.out.println("START! Worker " + workerNumber + " cracks hints!");
 		System.out.println("WORKER " + workerNumber + " allPermutations.size(): " + allPermutations.size());
-		Iterator<Map.Entry<Character, HashSet>> it = allPermutations.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry<Character, HashSet> pair = it.next();
+		for (Map.Entry<Character, HashSet> pair : allPermutations.entrySet()) {
 			// System.out.println("WORKER " + workerNumber + " hintKey: " + pair.getKey());
-			for(Object hint : workerHintMessage.hashedHints) {
+			for (Object hint : workerHintMessage.hashedHints) {
 				if (pair.getValue().contains(hint)) {
 					System.out.println("HINT 1 of WORKER " + workerNumber + " with key: " + pair.getKey());
 					crackedCharacters.add(pair.getKey());
@@ -118,7 +137,7 @@ public class Worker extends AbstractLoggingActor {
 
 		// generate permutations for the password
 		System.out.println("START! Worker " + workerNumber + " creates passwordpermutations!");
-		System.out.println("crackedCharactersArray.length: " + crackedCharactersArray.length + "workerHintMessage.passwordLength: " + workerHintMessage.passwordLength);
+		System.out.println("crackedCharactersArray.length: " + crackedCharactersArray.length + " workerHintMessage.passwordLength: " + workerHintMessage.passwordLength);
 		HashSet<String> passwordPermutations = new HashSet<>();
 		heapPermutation(crackedCharactersArray, workerHintMessage.passwordLength, workerHintMessage.passwordLength, passwordPermutations);
 		System.out.println("DONE! Worker " + workerNumber + " created passwordpermutations!");
@@ -129,6 +148,29 @@ public class Worker extends AbstractLoggingActor {
 				System.out.println("YEAH, Worker " + workerNumber + " cracked password " + workerHintMessage.id);
 			}
 		}
+
+		/*
+		if (allPermutations.isEmpty()) {
+			Iterator<Map.Entry<Character, char[]>> it = workerHintMessage.hintUniverses.entrySet().iterator();
+			while (it.hasNext()) {
+				Map.Entry<Character, char[]> pair = it.next();
+				HashSet<String> permutationSet = new HashSet<>();
+				heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
+				allPermutations.put(pair.getKey(), permutationSet);
+			}
+		}
+
+		Iterator<Map.Entry<Character, HashSet>> it = allPermutations.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry<Character, HashSet> pair = it.next();
+			for(Object hint : workerHintMessage.hashedHints) {
+				if (pair.getValue().contains(hint)) {
+					System.out.println(hint);
+					System.out.println(pair.getKey());
+				}
+			}
+		}
+		 */
 
 		//TODO: send hint message containing the two characters for the password permutation back to master
 	}
@@ -147,23 +189,23 @@ public class Worker extends AbstractLoggingActor {
 	private void register(Member member) {
 		if ((this.masterSystem == null) && member.hasRole(MasterSystem.MASTER_ROLE)) {
 			this.masterSystem = member;
-			
+
 			this.getContext()
 					.actorSelection(member.address() + "/user/" + Master.DEFAULT_NAME)
 					.tell(new Master.RegistrationMessage(), this.self());
 		}
 	}
-	
+
 	private void handle(MemberRemoved message) {
 		if (this.masterSystem.equals(message.member()))
 			this.self().tell(PoisonPill.getInstance(), ActorRef.noSender());
 	}
-	
+
 	private String hash(String line) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 			byte[] hashedBytes = digest.digest(String.valueOf(line).getBytes("UTF-8"));
-			
+
 			StringBuffer stringBuffer = new StringBuffer();
 			for (int i = 0; i < hashedBytes.length; i++) {
 				stringBuffer.append(Integer.toString((hashedBytes[i] & 0xff) + 0x100, 16).substring(1));
@@ -174,7 +216,7 @@ public class Worker extends AbstractLoggingActor {
 			throw new RuntimeException(e.getMessage());
 		}
 	}
-	
+
 	// Generating all permutations of an array using Heap's Algorithm
 	// https://en.wikipedia.org/wiki/Heap's_algorithm
 	// https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
