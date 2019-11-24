@@ -10,7 +10,6 @@ import akka.util.Timeout;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.apache.commons.lang3.tuple.Pair;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 
@@ -31,21 +30,30 @@ public class Master extends AbstractLoggingActor {
 		this.collector = collector;
 		this.workers = new ArrayList<>();
 		this.workingWorkers = new ArrayList<>();
+		this.allPasswords = new HashMap<>();
 	}
 
-	public static Queue<WorkerHintMessage> hintMessageQueue;
+	public static Queue<WorkerCrackRequest> hintMessageQueue;
 
 	////////////////////
 	// Actor Messages //
 	////////////////////
 
-	public static class WorkerHintMessage<T> implements Serializable {
+	public static class WorkerCrackRequest<T> implements Serializable {
 		private static final long serialVersionUID = 8107711559395710783L;
-		int id;
-		T[] hashedHints;
-		int passwordLength;
-		String hashedPassword;
-		HashMap<Character, char[]> hintUniverses;
+		public final int id;
+		public final T[] hashedHints;
+		public final int passwordLength;
+		public final String hashedPassword;
+		public final ActorRef replyTo;
+
+		public WorkerCrackRequest(int id, T[] hashedHints, int passwordLength, String hashedPassword, ActorRef replyTo){
+			this.id = id;
+			this.hashedHints = hashedHints;
+			this.passwordLength = passwordLength;
+			this.hashedPassword = hashedPassword;
+			this.replyTo = replyTo;
+		}
 	}
 
 	public static class HintPermutationRequest implements Serializable {
@@ -67,19 +75,16 @@ public class Master extends AbstractLoggingActor {
 			this.hintUniverse = hintUniverse;
 			this.replyTo = replyTo;
 		}
-		// Character hintCharacter;
-		// char[] hintUniverse;
 	}
 
-	// could probably also just be implemented as a general Response class with different contents
-	public static class HintPermutationResponse implements Serializable {
+	public static class MasterResponse<T1, T2> implements Serializable {
 		private static final long serialVersionUID = 7480612328579267137L;
-		public final Character hintCharacter;
-		public final HashSet<String> permutationSet;
+		public final T1 left;
+		public final T2 right;
 
-		public HintPermutationResponse(Character hintCharacter, HashSet<String> permutationSet) {
-			this.hintCharacter = hintCharacter;
-			this.permutationSet = permutationSet;
+		public MasterResponse(T1 left, T2 right) {
+			this.left = left;
+			this.right = right;
 		}
 	}
 
@@ -116,6 +121,7 @@ public class Master extends AbstractLoggingActor {
 	private final ActorRef collector;
 	private final List<ActorRef> workers;
 	private final List<ActorRef> workingWorkers;
+	private HashMap<Integer, String> allPasswords = new HashMap<>();
 	private boolean permutationsDone = false;
 
 	private long startTime;
@@ -140,7 +146,6 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
-				//.match(HintPermutationResponse.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
@@ -150,12 +155,6 @@ public class Master extends AbstractLoggingActor {
 
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
-
-	/*protected void handle(HintPermutationResponse message) {
-		System.out.println("REMOVING A WORKER, workingWorkers.size(): " + workingWorkers.size());
-		workingWorkers.remove(message.worker);
-		System.out.println("REMOVED A WORKER, workingWorkers.size(): " + workingWorkers.size());
-	}*/
 
 	protected void requestHintPermutations(String characterUniverse){
 		HashMap<Character, char[]> hintUniverses = new HashMap<>();
@@ -173,41 +172,32 @@ public class Master extends AbstractLoggingActor {
 		int nextWorker = 0;
 		ArrayList<Future<Object>> futureList = new ArrayList<>();
 		Timeout timeout = new Timeout(5, TimeUnit.MINUTES);
-
-		System.out.println("MASTER sending tasks to workers");
-		for (Map.Entry<Character, char[]> hint : hintUniverses.entrySet()) {
-			Future<Object> future = Patterns.ask(
-					workers.get(nextWorker),
-					new HintPermutationRequest(nextWorker+1, hint.getKey(), hint.getValue(), this.self()),
-					timeout);
-			futureList.add(future);
-			//nextWorker = ((nextWorker + 1) % workers.size());
-		}
-
-		/*
-		for (int i = 0; i < workers.size(); i++) {
-			ActorRef worker = workers.get(i);
-
-			Future<Object> future = Patterns.ask(
-					worker,
-					new HintPermutationRequest(i+1, hintUniverses, this.self()),
-					timeout);
-			futureList.add(future);
-			// workingWorkers.add(worker);
-			nextWorker = ((nextWorker + 1) % workers.size());
-		}
-		 */
-
 		HashMap<Character, HashSet> allPermutations = new HashMap<>();
 
-		System.out.println("MASTER collecting results from workers");
-		for (Future<Object> future : futureList) {
-			try {
-				HintPermutationResponse output = (HintPermutationResponse) Await.result(future, timeout.duration());
-				allPermutations.put(output.hintCharacter, output.permutationSet);
-			} catch (Exception e) {
-				e.printStackTrace();
+		for (int i = 0; i < characterUniverse.length(); i++) {
+			Character character = characterUniverse.charAt(i);
+			ActorRef worker = workers.get(nextWorker);
+			Future<Object> futureOut = Patterns.ask(
+					worker,
+					new HintPermutationRequest(nextWorker+1, character, hintUniverses.get(character), this.self()),
+					timeout
+			);
+			futureList.add(futureOut);
+			workingWorkers.add(worker);
+
+			// All workers are busy? Collect results before proceeding.
+			if (workingWorkers.size() == workers.size()) {
+				for (Future<Object> futureIn : futureList) {
+					try {
+						MasterResponse<Character, HashSet> output = (MasterResponse) Await.result(futureIn, timeout.duration());
+						allPermutations.put(output.left, output.right);
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+				}
+				workingWorkers.clear();
 			}
+			nextWorker = ((nextWorker + 1) % workers.size());
 		}
 
 		for (ActorRef worker : workers) {
@@ -232,8 +222,8 @@ public class Master extends AbstractLoggingActor {
 			return;
 		}
 
-		HashMap<Character, char[]> hintUniverses = new HashMap<>();
 		int nextWorker = 0;
+		ArrayList<Future<Object>> futureList = new ArrayList<>();
 
 		if (!permutationsDone) {
 			String characterUniverse = message.getLines().get(0)[2];
@@ -243,18 +233,40 @@ public class Master extends AbstractLoggingActor {
 		// create hint character universes
 		// get character set and password length from first line
 		for (String[] line: message.getLines()) {
-			WorkerHintMessage<String> request = new WorkerHintMessage<>();
-			request.id = Integer.parseInt(line[0]);
-			request.hintUniverses = hintUniverses;
-			request.passwordLength = Integer.parseInt(line[3]);
-			request.hashedPassword = line[4];
-			request.hashedHints = Arrays.copyOfRange(line, 5, line.length);
+			int id = Integer.parseInt(line[0]);
+			int passwordLength = Integer.parseInt(line[3]);
+			String hashedPassword = line[4];
+			String[] hashedHints = Arrays.copyOfRange(line, 5, line.length);
+			Timeout timeout = new Timeout(1, TimeUnit.MINUTES);
+			ActorRef worker = workers.get(nextWorker);
+			Future<Object> futureOut = Patterns.ask(
+					worker,
+					new WorkerCrackRequest<>(id, hashedHints, passwordLength, hashedPassword, this.self()),
+					timeout
+			);
+			futureList.add(futureOut);
+			workingWorkers.add(worker);
 
-			workers.get(nextWorker).tell(request, this.self());
+			if (workingWorkers.size() == workers.size()) {
+				for (Future<Object> futureIn : futureList) {
+					try {
+						MasterResponse<Integer, String> output = (MasterResponse) Await.result(futureIn, timeout.duration());
+						allPasswords.put(output.left, output.right);
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+				}
+				workingWorkers.clear();
+			}
 			nextWorker = ((nextWorker + 1) % workers.size());
 		}
 
-		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
+		for (Map.Entry<Integer, String> pair : allPasswords.entrySet()) {
+			System.out.println("id: " + pair.getKey() + " password: " + pair.getValue());
+		}
+
+
+			this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 
