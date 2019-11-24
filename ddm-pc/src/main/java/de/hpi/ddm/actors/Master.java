@@ -2,15 +2,20 @@ package de.hpi.ddm.actors;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.PoisonPill;
 import akka.actor.Props;
 import akka.actor.Terminated;
+import akka.pattern.Patterns;
+import akka.util.Timeout;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import scala.concurrent.Await;
+import scala.concurrent.Future;
 
 public class Master extends AbstractLoggingActor {
 
@@ -123,7 +128,7 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
-				.match(HintPermutationResponse.class, this::handle)
+				//.match(HintPermutationResponse.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
@@ -134,15 +139,13 @@ public class Master extends AbstractLoggingActor {
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 
-	protected void handle(HintPermutationResponse message) {
+	/*protected void handle(HintPermutationResponse message) {
 		System.out.println("REMOVING A WORKER, workingWorkers.size(): " + workingWorkers.size());
 		workingWorkers.remove(message.worker);
 		System.out.println("REMOVED A WORKER, workingWorkers.size(): " + workingWorkers.size());
-	}
+	}*/
 
-	protected boolean requestHintPermutations(String characterUniverse){
-		//HintPermutationRequest request = new HintPermutationRequest();
-
+	protected void requestHintPermutations(String characterUniverse){
 		HashMap<Character, char[]> hintUniverses = new HashMap<>();
 
 		for (int i = 0; i < characterUniverse.length(); i++) {
@@ -154,25 +157,27 @@ public class Master extends AbstractLoggingActor {
 			hintUniverses.put(hintKey, hintUniverse);
 		}
 
-		//request.hintUniverses = hintUniverses;
+		ArrayList<Future<Object>> futureList = new ArrayList<>();
+		Timeout timeout = new Timeout(5, TimeUnit.MINUTES);
 
 		for (int i = 0; i < workers.size(); i++) {
 			ActorRef worker = workers.get(i);
-			//request.id = i + 1;
-			worker.tell(
+
+			Future<Object> future = Patterns.ask(
+					worker,
 					new HintPermutationRequest(i+1, hintUniverses, this.self()),
-					this.self()
-			);
+					timeout);
+			futureList.add(future);
 			workingWorkers.add(worker);
-			System.out.println(i);
 		}
 
-		while(!workingWorkers.isEmpty()){
-
-		};
-
-		System.out.println("++++++ MASTER has all permutations ++++++");
-		return true;
+		for (Future<Object> future : futureList) {
+			try {
+				System.out.println(Await.result(future, timeout.duration()));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 	
 	protected void handle(BatchMessage message) {
@@ -195,26 +200,10 @@ public class Master extends AbstractLoggingActor {
 
 		String characterUniverse = message.getLines().get(0)[2];
 		requestHintPermutations(characterUniverse);
-		System.out.println("+++++++++ MASTER GOES ON +++++++++");
 
 		// create hint character universes
 		// get character set and password length from first line
 		for (String[] line: message.getLines()) {
-			int passwordLength = Integer.parseInt(line[3]);
-			//String characterUniverse = line[2];
-
-			/*if (hintUniverses.isEmpty()) {
-				for (int i = 0; i <= passwordLength; i++) {
-					char[] hintUniverse;
-					StringBuilder sb = new StringBuilder();
-					sb.append(characterUniverse);
-					char hintKey = sb.charAt(i);
-					sb.deleteCharAt(i);
-					hintUniverse = sb.toString().toCharArray();
-					hintUniverses.put(hintKey, hintUniverse);
-				}
-			}*/
-
 			WorkerHintMessage<String> request = new WorkerHintMessage<>();
 			request.id = Integer.parseInt(line[0]);
 			request.hintUniverses = hintUniverses;

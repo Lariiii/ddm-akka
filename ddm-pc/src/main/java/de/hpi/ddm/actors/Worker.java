@@ -89,7 +89,7 @@ public class Worker extends AbstractLoggingActor {
 		}
 		System.out.println("DONE! Worker " + workerNumber + " done permutating!");
 
-		message.replyTo.tell(new Master.HintPermutationResponse(this.self()), this.self());
+		sender().tell(new Master.HintPermutationResponse(this.self()), this.self());
 	}
 
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
@@ -103,7 +103,6 @@ public class Worker extends AbstractLoggingActor {
 			Map.Entry<Character, HashSet> pair = it.next();
 			// System.out.println("WORKER " + workerNumber + " hintKey: " + pair.getKey());
 			for(Object hint : workerHintMessage.hashedHints) {
-				// System.out.println("WORKER " + workerNumber + " bin in innerer for-Schleife");
 				if (pair.getValue().contains(hint)) {
 					System.out.println("HINT 1 of WORKER " + workerNumber + " with key: " + pair.getKey());
 					crackedCharacters.add(pair.getKey());
@@ -149,9 +148,9 @@ public class Worker extends AbstractLoggingActor {
 		if ((this.masterSystem == null) && member.hasRole(MasterSystem.MASTER_ROLE)) {
 			this.masterSystem = member;
 			
-			master = this.getContext()
-				.actorSelection(member.address() + "/user/" + Master.DEFAULT_NAME);
-			master.tell(new Master.RegistrationMessage(), this.self());
+			this.getContext()
+					.actorSelection(member.address() + "/user/" + Master.DEFAULT_NAME)
+					.tell(new Master.RegistrationMessage(), this.self());
 		}
 	}
 	
