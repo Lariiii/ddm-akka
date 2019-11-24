@@ -28,6 +28,7 @@ public class Master extends AbstractLoggingActor {
 		this.reader = reader;
 		this.collector = collector;
 		this.workers = new ArrayList<>();
+		this.workingWorkers = new ArrayList<>();
 	}
 
 	public static Queue<WorkerHintMessage> hintMessageQueue;
@@ -43,6 +44,36 @@ public class Master extends AbstractLoggingActor {
 		int passwordLength;
 		String hashedPassword;
 		HashMap<Character, char[]> hintUniverses;
+	}
+
+	public static class HintPermutationRequest implements Serializable {
+		private static final long serialVersionUID = -1427710472671723834L;
+		//public final ActorRef master;
+		public final int id;
+		public final HashMap<Character, char[]> hintUniverses;
+		public final ActorRef replyTo;
+
+		public HintPermutationRequest(
+				int id,
+				HashMap<Character, char[]> hintUniverses,
+				ActorRef replyTo
+		) {
+			this.id = id;
+			this.hintUniverses = hintUniverses;
+			this.replyTo = replyTo;
+		}
+		// Character hintCharacter;
+		// char[] hintUniverse;
+	}
+
+	// could probably also just be implemented as a general Response class with different contents
+	public static class HintPermutationResponse implements Serializable {
+		private static final long serialVersionUID = 7480612328579267137L;
+		public final ActorRef worker;
+
+		public HintPermutationResponse(ActorRef worker) {
+			this.worker = worker;
+		}
 	}
 
 	@Data
@@ -68,6 +99,7 @@ public class Master extends AbstractLoggingActor {
 	private final ActorRef reader;
 	private final ActorRef collector;
 	private final List<ActorRef> workers;
+	private final List<ActorRef> workingWorkers;
 
 	private long startTime;
 	
@@ -91,6 +123,7 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
+				.match(HintPermutationResponse.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
@@ -99,6 +132,47 @@ public class Master extends AbstractLoggingActor {
 		this.startTime = System.currentTimeMillis();
 		
 		this.reader.tell(new Reader.ReadMessage(), this.self());
+	}
+
+	protected void handle(HintPermutationResponse message) {
+		System.out.println("REMOVING A WORKER, workingWorkers.size(): " + workingWorkers.size());
+		workingWorkers.remove(message.worker);
+		System.out.println("REMOVED A WORKER, workingWorkers.size(): " + workingWorkers.size());
+	}
+
+	protected boolean requestHintPermutations(String characterUniverse){
+		//HintPermutationRequest request = new HintPermutationRequest();
+
+		HashMap<Character, char[]> hintUniverses = new HashMap<>();
+
+		for (int i = 0; i < characterUniverse.length(); i++) {
+			StringBuilder sb = new StringBuilder();
+			sb.append(characterUniverse);
+			char hintKey = sb.charAt(i);
+			sb.deleteCharAt(i);
+			char[] hintUniverse = sb.toString().toCharArray();
+			hintUniverses.put(hintKey, hintUniverse);
+		}
+
+		//request.hintUniverses = hintUniverses;
+
+		for (int i = 0; i < workers.size(); i++) {
+			ActorRef worker = workers.get(i);
+			//request.id = i + 1;
+			worker.tell(
+					new HintPermutationRequest(i+1, hintUniverses, this.self()),
+					this.self()
+			);
+			workingWorkers.add(worker);
+			System.out.println(i);
+		}
+
+		while(!workingWorkers.isEmpty()){
+
+		};
+
+		System.out.println("++++++ MASTER has all permutations ++++++");
+		return true;
 	}
 	
 	protected void handle(BatchMessage message) {
@@ -119,13 +193,17 @@ public class Master extends AbstractLoggingActor {
 		HashMap<Character, char[]> hintUniverses = new HashMap<>();
 		int nextWorker = 0;
 
+		String characterUniverse = message.getLines().get(0)[2];
+		requestHintPermutations(characterUniverse);
+		System.out.println("+++++++++ MASTER GOES ON +++++++++");
+
 		// create hint character universes
 		// get character set and password length from first line
 		for (String[] line: message.getLines()) {
 			int passwordLength = Integer.parseInt(line[3]);
-			String characterUniverse = line[2];
+			//String characterUniverse = line[2];
 
-			if (hintUniverses.isEmpty()) {
+			/*if (hintUniverses.isEmpty()) {
 				for (int i = 0; i <= passwordLength; i++) {
 					char[] hintUniverse;
 					StringBuilder sb = new StringBuilder();
@@ -135,7 +213,7 @@ public class Master extends AbstractLoggingActor {
 					hintUniverse = sb.toString().toCharArray();
 					hintUniverses.put(hintKey, hintUniverse);
 				}
-			}
+			}*/
 
 			WorkerHintMessage<String> request = new WorkerHintMessage<>();
 			request.id = Integer.parseInt(line[0]);

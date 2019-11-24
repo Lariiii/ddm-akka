@@ -1,15 +1,11 @@
 package de.hpi.ddm.actors;
 
 import java.io.UnsupportedEncodingException;
-import java.lang.reflect.Array;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
+import akka.actor.*;
 import akka.cluster.Cluster;
 import akka.cluster.ClusterEvent.CurrentClusterState;
 import akka.cluster.ClusterEvent.MemberRemoved;
@@ -17,7 +13,6 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
-import scala.Char;
 
 public class Worker extends AbstractLoggingActor {
 
@@ -45,7 +40,8 @@ public class Worker extends AbstractLoggingActor {
 
 	private Member masterSystem;
 	private final Cluster cluster;
-	HashMap<Character, HashSet> allPermutations = new HashMap<>();
+	private HashMap<Character, HashSet> allPermutations = new HashMap<>();
+	private ActorSelection master;
 	// for testing
 	private int workerNumber;
 
@@ -76,28 +72,28 @@ public class Worker extends AbstractLoggingActor {
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
 				.match(Master.WorkerHintMessage.class, this::handle)
+				.match(Master.HintPermutationRequest.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
+	private void handle(Master.HintPermutationRequest message) {
+		workerNumber = message.id;
+
+		System.out.println("GO! Worker " + workerNumber + " started permutating!");
+		for (Map.Entry<Character, char[]> pair : message.hintUniverses.entrySet()) {
+			HashSet<String> permutationSet = new HashSet<>();
+			heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
+			allPermutations.put(pair.getKey(), permutationSet);
+			// for (String permutation : permutationSet) { System.out.println(permutation); }
+		}
+		System.out.println("DONE! Worker " + workerNumber + " done permutating!");
+
+		message.replyTo.tell(new Master.HintPermutationResponse(this.self()), this.self());
+	}
+
 	private void handle(Master.WorkerHintMessage workerHintMessage) {
 		List<Character> crackedCharacters = new LinkedList<>();
-		// workerHintMessage.hintUniverses.forEach((key,value) -> System.out.println(key + " = " + String.valueOf((char[]) value)));
-
-		// generate all permutations for all possible hints (once)
-		if (allPermutations.isEmpty()) {
-			workerNumber = workerHintMessage.id;
-			System.out.println("GO! Worker " + workerNumber + " started permutating!");
-			Iterator<Map.Entry<Character, char[]>> it = workerHintMessage.hintUniverses.entrySet().iterator();
-			while (it.hasNext()) {
-				Map.Entry<Character, char[]> pair = it.next();
-				HashSet<String> permutationSet = new HashSet<>();
-				heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
-				allPermutations.put(pair.getKey(), permutationSet);
-				// for (String permutation : permutationSet) { System.out.println(permutation); }
-			}
-			System.out.println("DONE! Worker " + workerNumber + " done permutating!");
-		}
 
 		// crack hints
 		System.out.println("START! Worker " + workerNumber + " cracks hints!");
@@ -153,9 +149,9 @@ public class Worker extends AbstractLoggingActor {
 		if ((this.masterSystem == null) && member.hasRole(MasterSystem.MASTER_ROLE)) {
 			this.masterSystem = member;
 			
-			this.getContext()
-				.actorSelection(member.address() + "/user/" + Master.DEFAULT_NAME)
-				.tell(new Master.RegistrationMessage(), this.self());
+			master = this.getContext()
+				.actorSelection(member.address() + "/user/" + Master.DEFAULT_NAME);
+			master.tell(new Master.RegistrationMessage(), this.self());
 		}
 	}
 	
