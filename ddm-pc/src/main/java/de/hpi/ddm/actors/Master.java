@@ -188,7 +188,6 @@ public class Master extends AbstractLoggingActor {
 
 			// All workers are busy? Collect results before proceeding.
 			if (workingWorkers.size() == workers.size()) {
-				System.out.println("MASTER waits for workers");
 				for (Future<Object> futureIn : futureList) {
 					try {
 						MasterResponse<Character, HashSet> output = (MasterResponse) Await.result(futureIn, timeout.duration());
@@ -205,9 +204,7 @@ public class Master extends AbstractLoggingActor {
 		for (Future<Object> futureIn : futureList) {
 			try {
 				MasterResponse<Character, HashSet> output = (MasterResponse) Await.result(futureIn, timeout.duration());
-				System.out.println("MASTER got the response");
 				allPermutations.put(output.left, output.right);
-				System.out.println("MASTER collected the response");
 			} catch (Exception e) {
 				e.printStackTrace();
 			}

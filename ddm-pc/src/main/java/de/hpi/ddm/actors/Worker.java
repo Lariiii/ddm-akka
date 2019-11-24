@@ -87,7 +87,6 @@ public class Worker extends AbstractLoggingActor {
 	private void handle(Master.HintPermutationRequest message) {
 		workerNumber = message.id;
 
-		System.out.println("Worker " + workerNumber + " is permutating on " + Arrays.toString(message.hintUniverse));
 		HashSet<String> permutationSet = new HashSet<>();
 		heapPermutation(
 				message.hintUniverse,
@@ -103,12 +102,9 @@ public class Worker extends AbstractLoggingActor {
 		List<Character> crackedCharacters = new LinkedList<>();
 
 		// crack hints
-		System.out.println("START! Worker " + workerNumber + " cracks hints!");
-		System.out.println("WORKER " + workerNumber + " allPermutations.size(): " + allPermutations.size());
 		for (Map.Entry<Character, HashSet> pair : allPermutations.entrySet()) {
 			for (Object hint : workerCrackMessage.hashedHints) {
 				if (pair.getValue().contains(hint)) {
-					System.out.println("HINT 1 of WORKER " + workerNumber + " with key: " + pair.getKey());
 					crackedCharacters.add(pair.getKey());
 				}
 			}
@@ -125,22 +121,18 @@ public class Worker extends AbstractLoggingActor {
 		}
 
 		// generate permutations for the password
-		System.out.println("START! Worker " + workerNumber + " creates passwordpermutations!");
-		System.out.println("crackedCharactersArray.length: " + passwordUniverse.length + " workerHintMessage.passwordLength: " + workerCrackMessage.passwordLength);
 		HashSet<String> passwordPermutations = new HashSet<>();
 		heapPermutation(passwordUniverse, workerCrackMessage.passwordLength, workerCrackMessage.passwordLength, passwordPermutations);
-		System.out.println("DONE! Worker " + workerNumber + " created passwordpermutations!");
 
 		// crack password
 		String password = "n/a";
 		for(String permutation : passwordPermutations) {
 			if (workerCrackMessage.hashedPassword.equals(permutation)) {
-				System.out.println("YEAH, Worker " + workerNumber + " cracked password " + workerCrackMessage.id);
 				password = permutation;
 			}
 		}
 
-		sender().tell(new Master.MasterResponse<Integer, String>(workerCrackMessage.id, password), this.self());
+		sender().tell(new Master.MasterResponse<>(workerCrackMessage.id, password), this.self());
 	}
 
 	private void handle(CurrentClusterState message) {
