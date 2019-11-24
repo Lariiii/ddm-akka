@@ -1,6 +1,7 @@
 package de.hpi.ddm.actors;
 
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Array;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -94,15 +95,6 @@ public class Worker extends AbstractLoggingActor {
 				message.hintUniverse.length,
 				permutationSet
 		);
-		/*
-		for (Map.Entry<Character, char[]> pair : message.hintUniverses.entrySet()) {
-			System.out.println("Worker " + workerNumber + " is permutating on " + Arrays.toString(pair.getValue()));
-			HashSet<String> permutationSet = new HashSet<>();
-			heapPermutation(pair.getValue(), pair.getValue().length, pair.getValue().length, permutationSet);
-			allPermutations.put(pair.getKey(), permutationSet);
-			// for (String permutation : permutationSet) { System.out.println(permutation); }
-		}
-		 */
 
 		sender().tell(new Master.MasterResponse<Character, HashSet>(message.hintCharacter, permutationSet), this.self());
 	}
@@ -114,7 +106,6 @@ public class Worker extends AbstractLoggingActor {
 		System.out.println("START! Worker " + workerNumber + " cracks hints!");
 		System.out.println("WORKER " + workerNumber + " allPermutations.size(): " + allPermutations.size());
 		for (Map.Entry<Character, HashSet> pair : allPermutations.entrySet()) {
-			// System.out.println("WORKER " + workerNumber + " hintKey: " + pair.getKey());
 			for (Object hint : workerCrackMessage.hashedHints) {
 				if (pair.getValue().contains(hint)) {
 					System.out.println("HINT 1 of WORKER " + workerNumber + " with key: " + pair.getKey());
@@ -122,16 +113,22 @@ public class Worker extends AbstractLoggingActor {
 				}
 			}
 		}
-		char[] crackedCharactersArray = new char[crackedCharacters.size()];
-		for (int i = 0; i < crackedCharacters.size(); i++) {
-			crackedCharactersArray[i] = crackedCharacters.get(i);
+		ArrayList<Character> passwordUniverseList = new ArrayList<>();
+		for (int i = 0; i < workerCrackMessage.characterUniverse.length; i++) {
+			if (!crackedCharacters.contains(workerCrackMessage.characterUniverse[i])){
+				passwordUniverseList.add(crackedCharacters.get(i));
+			}
+		}
+		char[] passwordUniverse = new char[passwordUniverseList.size()];
+		for (int i = 0; i < passwordUniverseList.size(); i++) {
+			passwordUniverse[i] = passwordUniverseList.get(i);
 		}
 
 		// generate permutations for the password
 		System.out.println("START! Worker " + workerNumber + " creates passwordpermutations!");
-		System.out.println("crackedCharactersArray.length: " + crackedCharactersArray.length + " workerHintMessage.passwordLength: " + workerCrackMessage.passwordLength);
+		System.out.println("crackedCharactersArray.length: " + passwordUniverse.length + " workerHintMessage.passwordLength: " + workerCrackMessage.passwordLength);
 		HashSet<String> passwordPermutations = new HashSet<>();
-		heapPermutation(crackedCharactersArray, workerCrackMessage.passwordLength, workerCrackMessage.passwordLength, passwordPermutations);
+		heapPermutation(passwordUniverse, workerCrackMessage.passwordLength, workerCrackMessage.passwordLength, passwordPermutations);
 		System.out.println("DONE! Worker " + workerNumber + " created passwordpermutations!");
 
 		// crack password

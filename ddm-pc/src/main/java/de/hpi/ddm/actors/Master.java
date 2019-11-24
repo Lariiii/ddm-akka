@@ -46,13 +46,15 @@ public class Master extends AbstractLoggingActor {
 		public final int passwordLength;
 		public final String hashedPassword;
 		public final ActorRef replyTo;
+		public final char[] characterUniverse;
 
-		public WorkerCrackRequest(int id, T[] hashedHints, int passwordLength, String hashedPassword, ActorRef replyTo){
+		public WorkerCrackRequest(int id, T[] hashedHints, int passwordLength, String hashedPassword, ActorRef replyTo, char[] characterUniverse){
 			this.id = id;
 			this.hashedHints = hashedHints;
 			this.passwordLength = passwordLength;
 			this.hashedPassword = hashedPassword;
 			this.replyTo = replyTo;
+			this.characterUniverse = characterUniverse;
 		}
 	}
 
@@ -166,7 +168,6 @@ public class Master extends AbstractLoggingActor {
 			sb.deleteCharAt(i);
 			char[] hintUniverse = sb.toString().toCharArray();
 			hintUniverses.put(hintKey, hintUniverse);
-			System.out.println(hintUniverse);
 		}
 
 		int nextWorker = 0;
@@ -187,6 +188,7 @@ public class Master extends AbstractLoggingActor {
 
 			// All workers are busy? Collect results before proceeding.
 			if (workingWorkers.size() == workers.size()) {
+				System.out.println("MASTER waits for workers");
 				for (Future<Object> futureIn : futureList) {
 					try {
 						MasterResponse<Character, HashSet> output = (MasterResponse) Await.result(futureIn, timeout.duration());
@@ -199,6 +201,18 @@ public class Master extends AbstractLoggingActor {
 			}
 			nextWorker = ((nextWorker + 1) % workers.size());
 		}
+
+		for (Future<Object> futureIn : futureList) {
+			try {
+				MasterResponse<Character, HashSet> output = (MasterResponse) Await.result(futureIn, timeout.duration());
+				System.out.println("MASTER got the response");
+				allPermutations.put(output.left, output.right);
+				System.out.println("MASTER collected the response");
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		workingWorkers.clear();
 
 		for (ActorRef worker : workers) {
 			worker.tell(new PermutationsMessage(allPermutations), this.self());
@@ -241,7 +255,7 @@ public class Master extends AbstractLoggingActor {
 			ActorRef worker = workers.get(nextWorker);
 			Future<Object> futureOut = Patterns.ask(
 					worker,
-					new WorkerCrackRequest<>(id, hashedHints, passwordLength, hashedPassword, this.self()),
+					new WorkerCrackRequest<String>(id, hashedHints, passwordLength, hashedPassword, this.self(), line[2].toCharArray()),
 					timeout
 			);
 			futureList.add(futureOut);
