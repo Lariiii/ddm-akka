@@ -39,8 +39,6 @@ object SimpleSpark extends App {
     // Set the default number of shuffle partitions (default is 200, which is too high for local deployment)
     spark.conf.set("spark.sql.shuffle.partitions", "8") //
 
-    println("---------------------------------------------------------------------------------------------------------")
-
     def time[R](block: => R): R = {
       val t0 = System.currentTimeMillis()
       val result = block
